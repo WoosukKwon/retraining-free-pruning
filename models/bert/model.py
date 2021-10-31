@@ -1,13 +1,12 @@
 import torch
-from torch.nn import CrossEntropyLoss, MSELoss
+import torch.nn as nn
 from transformers import PreTrainedModel
-from transformers.modeling_outputs import BaseModelOutput, SequenceClassifierOutput
-
-from models.common.classifier import ClassificationHead
+from transformers.modeling_outputs import BaseModelOutputWithPooling, SequenceClassifierOutput
 
 from models.bert.config import BertConfig
 from models.bert.embedding import BertEmbeddings
 from models.bert.encoder import BertEncoder
+from models.bert.pooler import BertPooler
 
 
 class BertPretrainedModel(PreTrainedModel):
@@ -28,6 +27,7 @@ class BertModel(BertPretrainedModel):
         self.config = config
         self.embeddings = BertEmbeddings(config)
         self.encoder = BertEncoder(config)
+        self.pooler = BertPooler(config)
 
         self.init_weights()
 
@@ -46,8 +46,13 @@ class BertModel(BertPretrainedModel):
             embedding_output,
             attention_mask,
         )
-        return BaseModelOutput(
-            last_hidden_state=encoder_outputs[0],
+
+        last_hidden_state = encoder_outputs[0]
+        pooler_output = self.pooler(last_hidden_state)
+        
+        return BaseModelOutputWithPooling(
+            last_hidden_state=last_hidden_state,
+            pooler_output= pooler_output,
         )
 
 
@@ -58,8 +63,13 @@ class BertForSequenceClassification(BertPretrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
+        self.problem_type = config.problem_type
+
         self.bert = BertModel(config)
-        self.classifier = ClassificationHead(config)
+        self.dropout = nn.Dropout(
+            config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
+        )
+        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
         self.init_weights()
 
@@ -73,17 +83,23 @@ class BertForSequenceClassification(BertPretrainedModel):
             input_ids,
             attention_mask,
         )
-        sequence_output = outputs[0]
-        logits = self.classifier(sequence_output)
+        pooled_output = self.dropout(outputs[1])
+        logits = self.classifier(pooled_output)
 
         loss = None
         if labels is not None:
-            if self.is_regression:
-                loss_fct = MSELoss()
-                loss = loss_fct(logits.view(-1), labels.view(-1))
-            else:
-                loss_fct = CrossEntropyLoss()
+            if self.problem_type == "regression":
+                loss_fct = nn.MSELoss()
+                if self.num_labels == 1:
+                    loss = loss_fct(logits.squeeze(), labels.squeeze())
+                else:
+                    loss = loss_fct(logits, labels)
+            elif self.problem_type == "single_label_classification":
+                loss_fct = nn.CrossEntropyLoss()
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            elif self.problem_type == "multi_label_classification":
+                loss_fct = nn.BCEWithLogitsLoss()
+                loss = loss_fct(logits, labels)
 
         return SequenceClassifierOutput(
             loss=loss,

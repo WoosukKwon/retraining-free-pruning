@@ -23,8 +23,8 @@ class BertConfig(PretrainedConfig):
         pad_token_id=1,
         bos_token_id=0,
         eos_token_id=2,
-        embedding_class="bert",
         position_embedding_type="absolute",
+        classifier_dropout=None,
         **kwargs,
     ):
         super().__init__(
@@ -48,4 +48,4 @@ class BertConfig(PretrainedConfig):
         self.initializer_range = initializer_range
         self.layer_norm_eps = layer_norm_eps
         self.position_embedding_type = position_embedding_type
-        self.embedding_class = embedding_class
+        self.classifier_dropout = classifier_dropout
