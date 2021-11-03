@@ -46,15 +46,15 @@ class BertEncoder(nn.Module):
         self,
         hidden_states,
         attention_mask,
-        head_mask=None,
-        filter_mask=None,
+        head_masks=None,
+        filter_masks=None,
     ):
         for i, layer_module in enumerate(self.layer):
             hidden_states, attention_mask = layer_module(
                 hidden_states,
                 attention_mask,
-                head_mask=head_mask,
-                filter_mask=filter_mask,
+                head_mask=head_masks[i],
+                filter_mask=filter_masks[i],
             )
 
         return BaseModelOutput(
