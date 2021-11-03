@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 
 import torch
@@ -10,6 +11,8 @@ from models.bert.config import BertConfig
 from models.bert.model import BertForSequenceClassification
 from tools.glue import max_seq_length, glue_dataset
 
+
+logger = logging.getLogger(__name__)
 
 MODELS = {
     "bert-base-uncased": (BertConfig, BertForSequenceClassification),
@@ -30,6 +33,7 @@ parser.add_argument("--sample_size", type=int, default=256)
 parser.add_argument("--gpu", type=int, default=0)
 parser.add_argument("--tokenizer", type=str, default= None)
 parser.add_argument("--seed", type=int, default=0)
+parser.add_argument("--log_dir", type=str, default=None)
 
 
 def sample_data(task_name, tokenizer, batch_size):
@@ -79,9 +83,29 @@ def main():
     args = parser.parse_args()
     if args.tokenizer is None:
         args.tokenizer = args.model_name
-    
+    if args.log_dir is None:
+        args.log_dir = os.path.join(
+            "logs",
+            args.model_name,
+            args.task_name,
+            f"sample_{args.sample_size}",
+            f"seed_{args.seed}",
+        )
+    os.makedirs(args.log_dir, exist_ok=True)
+
+    logging.basicConfig(
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        datefmt="%m/%d/%Y %H:%M:%S",
+        level=logging.INFO,
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler(os.path.join(args.log_dir, "log.txt")),
+        ],
+    )
+
     os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
     set_seed(args.seed)
+    logger.info(f"Seed number: {args.seed}")
     
     config = MODELS[args.model_name][0].from_pretrained(args.ckpt_dir)
     model = MODELS[args.model_name][1].from_pretrained(args.ckpt_dir, config=config)
