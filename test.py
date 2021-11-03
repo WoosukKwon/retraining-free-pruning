@@ -7,12 +7,13 @@ from datasets import load_metric
 from accelerate import Accelerator
 from transformers import AutoTokenizer
 
+from models.bert.config import BertConfig
 from models.bert.model import BertForSequenceClassification
 from tools.glue import glue_dataloader
 
 
 MODELS = {
-    "bert-base-uncased": BertForSequenceClassification,
+    "bert-base-uncased": (BertConfig, BertForSequenceClassification),
 }
 
 parser = argparse.ArgumentParser()
@@ -37,7 +38,6 @@ def main():
     
     os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
 
-    model = MODELS[args.model_name].from_pretrained(args.ckpt_dir)
     tokenizer = AutoTokenizer.from_pretrained(
         args.tokenizer,
         use_fast=True,
@@ -50,6 +50,9 @@ def main():
         batch_size=128,
     )
     metric = load_metric("glue", args.task_name)
+
+    config = MODELS[args.model_name][0].from_pretrained(args.ckpt_dir)
+    model = MODELS[args.model_name][1].from_pretrained(args.ckpt_dir, config=config)
 
     accelerator = Accelerator()
     model, eval_dataloader = accelerator.prepare(
