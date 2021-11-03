@@ -35,6 +35,8 @@ class BertModel(BertPretrainedModel):
         self,
         input_ids,
         attention_mask,
+        head_mask=None,
+        filter_mask=None,
     ):
         embedding_output = self.embeddings(input_ids=input_ids)
         attention_mask = self.get_extended_attention_mask(
@@ -45,6 +47,8 @@ class BertModel(BertPretrainedModel):
         encoder_outputs = self.encoder(
             embedding_output,
             attention_mask,
+            head_mask=head_mask,
+            filter_mask=filter_mask,
         )
 
         last_hidden_state = encoder_outputs[0]
@@ -77,11 +81,15 @@ class BertForSequenceClassification(BertPretrainedModel):
         self,
         input_ids,
         attention_mask,
+        head_mask=None,
+        filter_mask=None,
         labels=None,
     ):
         outputs = self.bert(
             input_ids,
             attention_mask,
+            head_mask=head_mask,
+            filter_mask=filter_mask,
         )
         pooled_output = self.dropout(outputs[1])
         logits = self.classifier(pooled_output)

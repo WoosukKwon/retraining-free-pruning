@@ -20,15 +20,18 @@ class BertLayer(nn.Module):
         self,
         hidden_states,
         attention_mask,
+        head_mask=None,
+        filter_mask=None,
     ):
         self_attention_outputs = self.attention(
             hidden_states,
             attention_mask,
             output_attentions=False,
+            head_mask=head_mask,
         )
         attention_output = self_attention_outputs[0]
         intermediate_output = self.intermediate(attention_output)
-        layer_output = self.output(intermediate_output, attention_output)
+        layer_output = self.output(intermediate_output, attention_output, filter_mask=filter_mask)
         return layer_output, attention_mask
 
 
@@ -43,11 +46,15 @@ class BertEncoder(nn.Module):
         self,
         hidden_states,
         attention_mask,
+        head_mask=None,
+        filter_mask=None,
     ):
         for i, layer_module in enumerate(self.layer):
             hidden_states, attention_mask = layer_module(
                 hidden_states,
                 attention_mask,
+                head_mask=head_mask,
+                filter_mask=filter_mask,
             )
 
         return BaseModelOutput(
