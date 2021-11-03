@@ -60,15 +60,15 @@ def main():
     )
     model.eval()
     with torch.no_grad():
-        head_mask = torch.ones(config.num_attention_heads).cuda()
-        filter_mask = torch.ones(config.num_attention_heads).cuda()
+        head_masks = [torch.ones(config.num_attention_heads).cuda() for _ in range(config.num_hidden_layers)]
+        filter_masks = [torch.ones(config.num_attention_heads).cuda() for _ in range(config.num_hidden_layers)]
 
         for batch in tqdm(eval_dataloader):
             outputs = model(
                 input_ids=batch["input_ids"],
                 attention_mask=batch["attention_mask"],
-                head_mask=head_mask,
-                filter_mask=filter_mask,
+                head_masks=head_masks,
+                filter_masks=filter_masks,
             )
             if model.problem_type == "regression":
                 predictions = outputs.logits.squeeze()
