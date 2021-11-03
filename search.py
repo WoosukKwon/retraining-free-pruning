@@ -1,11 +1,9 @@
 import argparse
 import os
 
-from tqdm import tqdm
 import torch
 from torch.utils.data import DataLoader
 from datasets import load_metric
-from accelerate import Accelerator
 from transformers import AutoTokenizer, default_data_collator, set_seed
 
 from models.bert.config import BertConfig
