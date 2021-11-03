@@ -56,13 +56,13 @@ def sample_data(task_name, tokenizer, batch_size):
 
 
 @torch.no_grad()
-def evaluate(model, sample_batch, head_mask, filter_mask, metric):
+def evaluate(model, sample_batch, head_masks, filter_masks, metric):
     model.eval()
     outputs = model(
         input_ids=sample_batch["input_ids"],
         attention_mask=sample_batch["attention_mask"],
-        head_mask=head_mask,
-        filter_mask=filter_mask,
+        head_masks=head_masks,
+        filter_masks=filter_masks,
     )
     if model.problem_type == "regression":
         predictions = outputs.logits.squeeze()
@@ -97,13 +97,14 @@ def main():
     metric = load_metric("glue", args.task_name)
 
     model = model.cuda()
-    head_mask = torch.ones(config.num_attention_heads).cuda()
-    filter_mask = torch.ones(config.num_attention_heads).cuda()
     sample_batch["input_ids"] = sample_batch["input_ids"].cuda()
     sample_batch["attention_mask"] = sample_batch["attention_mask"].cuda()
     sample_batch["labels"] = sample_batch["labels"].cuda()
+    
+    head_masks = [torch.ones(config.num_attention_heads).cuda() for _ in range(config.num_hidden_layers)]
+    filter_masks = [torch.ones(config.num_attention_heads).cuda() for _ in range(config.num_hidden_layers)]
 
-    accuracy = evaluate(model, sample_batch, head_mask, filter_mask, metric)
+    accuracy = evaluate(model, sample_batch, head_masks, filter_masks, metric)
     print(accuracy)
 
 
