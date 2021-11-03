@@ -13,7 +13,7 @@ def compute_mac(
 
     num_hidden_layers = len(num_heads_per_layer)
 
-    if isinstance(seq_len_per_layer, int):
+    if isinstance(seq_len_per_layer, (int, float)):
         seq_len_per_layer = [seq_len_per_layer] * (num_hidden_layers + 1)
     assert len(seq_len_per_layer) == num_hidden_layers + 1
     
