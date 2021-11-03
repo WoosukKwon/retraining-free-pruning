@@ -33,6 +33,7 @@ parser.add_argument("--task_name", type=str, required=True, choices=[
 ])
 parser.add_argument("--ckpt_dir", type=str, required=True)
 parser.add_argument("--sample_size", type=int, default=256)
+parser.add_argument("--oracle", action="store_true")
 parser.add_argument("--search_algo", required=True, choices=[
     "greedy",
     "beam",
@@ -88,11 +89,8 @@ def evaluate(model, sample_batch, head_masks, filter_masks, metric):
 
 
 @torch.no_grad()
-def test(model, head_config, filter_config, test_dataloader, metric):
-    head_masks = config_to_masks(head_config, 12)
-    filter_masks = config_to_masks(filter_config, 12)
-
-    for batch in tqdm(test_dataloader):
+def test(model, head_masks, filter_masks, test_dataloader, metric, disable_tqdm=False):
+    for batch in tqdm(test_dataloader, disable=disable_tqdm):
         outputs = model(
             input_ids=batch["input_ids"].cuda(),
             attention_mask=batch["attention_mask"].cuda(),
@@ -108,7 +106,8 @@ def test(model, head_config, filter_config, test_dataloader, metric):
             references=batch["labels"],
         )
     eval_metric = metric.compute()
-    logger.info(eval_metric)
+    accuracy = eval_metric["accuracy"] # FIXME
+    return accuracy * 100.0
 
 
 @torch.no_grad()
@@ -130,7 +129,7 @@ def config_to_mac(model_config, head_config, filter_config, avg_seq_len):
     return mac
 
 
-def greedy_search(model, model_config, sample_batch, metric, avg_seq_len, mac_acc_drop):
+def greedy_search(model, model_config, sample_batch, metric, avg_seq_len, mac_acc_drop, oracle=False, test_dataloader=None):
     num_hidden_layers = model_config.num_hidden_layers
     num_attention_heads = model_config.num_attention_heads
     num_filter_groups = model_config.num_attention_heads
@@ -141,7 +140,10 @@ def greedy_search(model, model_config, sample_batch, metric, avg_seq_len, mac_ac
     head_masks = config_to_masks(head_config, num_attention_heads)
     filter_masks = config_to_masks(filter_config, num_filter_groups)
 
-    base_acc = evaluate(model, sample_batch, head_masks, filter_masks, metric)
+    if oracle:
+        base_acc = test(model, head_masks, filter_masks, test_dataloader, metric, disable_tqdm=True)
+    else:
+        base_acc = evaluate(model, sample_batch, head_masks, filter_masks, metric)
     acc_threshold = base_acc - mac_acc_drop
     base_mac = config_to_mac(model_config, head_config, filter_config, avg_seq_len)
     logger.info(f"Base accuracy: {base_acc:.2f}, Accuracy threshold: {acc_threshold:.2f}")
@@ -158,7 +160,10 @@ def greedy_search(model, model_config, sample_batch, metric, avg_seq_len, mac_ac
                 tmp_filter_config[layer_idx] = num_groups
                 tmp_filter_masks = config_to_masks(tmp_filter_config, num_filter_groups)
 
-                acc = evaluate(model, sample_batch, head_masks, tmp_filter_masks, metric)
+                if oracle:
+                    acc = test(model, head_masks, tmp_filter_masks, test_dataloader, metric, disable_tqdm=True)
+                else:
+                    acc = evaluate(model, sample_batch, head_masks, tmp_filter_masks, metric)
                 if acc >= acc_threshold:
                     filter_config[layer_idx] = num_groups
                     curr_acc = acc
@@ -172,7 +177,10 @@ def greedy_search(model, model_config, sample_batch, metric, avg_seq_len, mac_ac
                 tmp_head_config[layer_idx] = num_heads
                 tmp_head_masks = config_to_masks(tmp_head_config, num_attention_heads)
 
-                acc = evaluate(model, sample_batch, tmp_head_masks, filter_masks, metric)
+                if oracle:
+                    acc = test(model, tmp_head_masks, filter_masks, test_dataloader, metric, disable_tqdm=True)
+                else:
+                    acc = evaluate(model, sample_batch, tmp_head_masks, filter_masks, metric)
                 if acc >= acc_threshold:
                     head_config[layer_idx] = num_heads
                     curr_acc = acc
@@ -197,7 +205,7 @@ def main():
             args.task_name,
             args.search_algo,
             f"acc_drop_{args.max_acc_drop}",
-            f"sample_{args.sample_size}",
+            f"sample_{args.sample_size}" if not args.oracle else "oracle",
             f"seed_{args.seed}",
         )
     os.makedirs(args.log_dir, exist_ok=True)
@@ -234,6 +242,13 @@ def main():
     sample_batch["attention_mask"] = sample_batch["attention_mask"].cuda()
     sample_batch["labels"] = sample_batch["labels"].cuda()
 
+    test_dataloader = glue_dataloader(
+        args.task_name,
+        tokenizer=tokenizer,
+        training=False,
+        batch_size=128,
+    )
+
     if args.search_algo == "greedy":
         head_config, filter_config = greedy_search(
             model,
@@ -242,16 +257,17 @@ def main():
             metric,
             avg_seq_len,
             mac_acc_drop=args.max_acc_drop,
+            oracle=args.oracle,
+            test_dataloader=test_dataloader,
         )
 
-    test_dataloader = glue_dataloader(
-        args.task_name,
-        tokenizer=tokenizer,
-        training=False,
-        batch_size=128,
-    )
-    test(model, head_config, filter_config, test_dataloader, metric)
+    if not args.oracle:
+        head_masks = config_to_masks(head_config, config.num_attention_heads)
+        filter_masks = config_to_masks(filter_config, config.num_attention_heads)
+        acc = test(model, head_masks, filter_masks, test_dataloader, metric)
+        logger.info(f"Test accuracy: {acc:.2f}")
 
+    logger.info(f"Searched architecture: Heads - {head_config} Filters - {filter_config}")
 
 if __name__ == "__main__":
     main()
