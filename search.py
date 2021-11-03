@@ -4,6 +4,7 @@ import logging
 import os
 
 from tqdm import tqdm
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from datasets import load_metric
@@ -37,7 +38,9 @@ parser.add_argument("--oracle", action="store_true")
 parser.add_argument("--search_algo", required=True, choices=[
     "greedy",
     "beam",
+    "random",
 ])
+parser.add_argument("--rand_num_iter", type=int, default=100)
 parser.add_argument("--max_acc_drop", type=float, default=1.0)
 parser.add_argument("--gpu", type=int, default=0)
 parser.add_argument("--tokenizer", type=str, default= None)
@@ -129,7 +132,7 @@ def config_to_mac(model_config, head_config, filter_config, avg_seq_len):
     return mac
 
 
-def greedy_search(model, model_config, sample_batch, metric, avg_seq_len, mac_acc_drop, oracle=False, test_dataloader=None):
+def greedy_search(model, model_config, sample_batch, metric, avg_seq_len, max_acc_drop, oracle=False, test_dataloader=None):
     num_hidden_layers = model_config.num_hidden_layers
     num_attention_heads = model_config.num_attention_heads
     num_filter_groups = model_config.num_attention_heads
@@ -144,7 +147,7 @@ def greedy_search(model, model_config, sample_batch, metric, avg_seq_len, mac_ac
         base_acc = test(model, head_masks, filter_masks, test_dataloader, metric, disable_tqdm=True)
     else:
         base_acc = evaluate(model, sample_batch, head_masks, filter_masks, metric)
-    acc_threshold = base_acc - mac_acc_drop
+    acc_threshold = base_acc - max_acc_drop
     base_mac = config_to_mac(model_config, head_config, filter_config, avg_seq_len)
     logger.info(f"Base accuracy: {base_acc:.2f}, Accuracy threshold: {acc_threshold:.2f}")
 
@@ -194,6 +197,49 @@ def greedy_search(model, model_config, sample_batch, metric, avg_seq_len, mac_ac
     return head_config, filter_config
 
 
+def random_search(num_iter, model, model_config, sample_batch, metric, avg_seq_len, max_acc_drop):
+    num_hidden_layers = model_config.num_hidden_layers
+    num_attention_heads = model_config.num_attention_heads
+    num_filter_groups = model_config.num_attention_heads
+
+    head_config = [num_attention_heads] * num_hidden_layers
+    filter_config = [num_filter_groups] * num_hidden_layers
+
+    head_masks = config_to_masks(head_config, num_attention_heads)
+    filter_masks = config_to_masks(filter_config, num_filter_groups)
+
+    base_acc = evaluate(model, sample_batch, head_masks, filter_masks, metric)
+    acc_threshold = base_acc - max_acc_drop
+    base_mac = config_to_mac(model_config, head_config, filter_config, avg_seq_len)
+    logger.info(f"Base accuracy: {base_acc:.2f}, Accuracy threshold: {acc_threshold:.2f}")
+
+    best_mac = base_mac
+    best_head_config = head_config
+    best_filter_config = filter_config
+    for i in range(num_iter):
+        head_config = np.random.randint(low=6, high=num_attention_heads + 1, size=num_hidden_layers)
+        head_config = list(head_config)
+        filter_config = np.random.randint(low=6, high=num_filter_groups, size=num_hidden_layers)
+        filter_config = list(filter_config)
+
+        head_masks = config_to_masks(head_config, max_num=num_attention_heads)
+        filter_masks = config_to_masks(filter_config, max_num=num_filter_groups)
+        acc = evaluate(model, sample_batch, head_masks, filter_masks, metric)
+
+        if acc >= acc_threshold:
+            mac = config_to_mac(model_config, head_config, filter_config, avg_seq_len)
+            if mac < best_mac:
+                best_mac = mac
+                best_head_config = head_config
+                best_filter_config = filter_config
+                logger.info(f"Iteration {i}: Heads - {head_config} Filters - {filter_config} Acc: {acc:.2f}")
+    
+    reduced_ratio = best_mac / base_mac
+    logger.info(f"Original MAC: {base_mac / 1000000:.2f} M, Reduced MAC: {best_mac / 1000000:.2f} ({reduced_ratio * 100.0:.2f} %)")
+
+    return best_head_config, best_filter_config
+
+
 def main():
     args = parser.parse_args()
     if args.tokenizer is None:
@@ -219,6 +265,7 @@ def main():
             logging.FileHandler(os.path.join(args.log_dir, "log.txt")),
         ],
     )
+    logger.info(args)
 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
     set_seed(args.seed)
@@ -256,9 +303,19 @@ def main():
             sample_batch,
             metric,
             avg_seq_len,
-            mac_acc_drop=args.max_acc_drop,
+            max_acc_drop=args.max_acc_drop,
             oracle=args.oracle,
             test_dataloader=test_dataloader,
+        )
+    elif args.search_algo == "random":
+        head_config, filter_config = random_search(
+            args.rand_num_iter,
+            model,
+            config,
+            sample_batch,
+            metric,
+            avg_seq_len,
+            max_acc_drop=args.max_acc_drop,
         )
 
     if not args.oracle:
