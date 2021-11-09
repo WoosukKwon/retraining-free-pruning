@@ -12,6 +12,7 @@ class BertConfig(PretrainedConfig):
         num_hidden_layers=12,
         attention_head_size=64,
         num_attention_heads=12,
+        num_filter_groups=3072,
         intermediate_size=3072,
         hidden_act="gelu",
         hidden_dropout_prob=0.1,
@@ -40,6 +41,7 @@ class BertConfig(PretrainedConfig):
         self.attention_head_size = attention_head_size
         self.num_attention_heads = num_attention_heads
         self.hidden_act = hidden_act
+        self.num_filter_groups = num_filter_groups
         self.intermediate_size = intermediate_size
         self.hidden_dropout_prob = hidden_dropout_prob
         self.attention_probs_dropout_prob = attention_probs_dropout_prob

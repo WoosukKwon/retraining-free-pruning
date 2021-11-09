@@ -25,7 +25,7 @@ class BertOutput(nn.Module):
     def __init__(self, config, idx):
         super().__init__()
         self.hidden_size = config.hidden_size
-        self.num_groups = config.num_attention_heads
+        self.num_groups = config.num_filter_groups
         self.group_size = int(config.intermediate_size / self.num_groups)
 
         self.dense = nn.Linear(config.intermediate_size, config.hidden_size)
@@ -33,22 +33,10 @@ class BertOutput(nn.Module):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
     def masked_dense(self, hidden_states, filter_mask):
-        weights_per_filter = self.dense.weight.transpose(0, 1).view(
-            self.num_groups,
-            self.group_size,
-            self.hidden_size,
-        )
-        hidden_states = hidden_states.view(
-            hidden_states.shape[0],
-            hidden_states.shape[1],
-            self.num_groups,
-            self.group_size,
-        ).permute(0, 2, 1, 3)
-        hidden_states = torch.matmul(hidden_states, weights_per_filter)
-
-        filter_mask = filter_mask.view(-1, 1, 1)
-        hidden_states = hidden_states * filter_mask
-        hidden_states = hidden_states.sum(dim=1)
+        filter_mask = filter_mask.view(-1, 1).expand(-1, self.group_size * self.hidden_size)
+        filter_mask = filter_mask.reshape(-1, self.hidden_size)
+        weights = self.dense.weight.t() * filter_mask
+        hidden_states = torch.matmul(hidden_states, weights)
         hidden_states = hidden_states + self.dense.bias
         return hidden_states
 
