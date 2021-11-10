@@ -26,6 +26,7 @@ class BertConfig(PretrainedConfig):
         eos_token_id=2,
         position_embedding_type="absolute",
         classifier_dropout=None,
+        prune_tokens=False,
         **kwargs,
     ):
         super().__init__(
@@ -51,3 +52,4 @@ class BertConfig(PretrainedConfig):
         self.layer_norm_eps = layer_norm_eps
         self.position_embedding_type = position_embedding_type
         self.classifier_dropout = classifier_dropout
+        self.prune_tokens = prune_tokens
