@@ -247,9 +247,9 @@ def main():
             eval_metric = metric.compute()
             logger.info(f"epoch {epoch}: {eval_metric}")
 
-    torch.save(model, os.path.join(args.output_dir, "pytorch_model.bin"))
-    torch.save(head_scores, os.path.join(args.output_dir, "head_scores.pt"))
-    torch.save(filter_scores, os.path.join(args.output_dir, "filter_scores.pt"))
+    model.save_pretrained(args.output_dir)
+    torch.save(head_masks, os.path.join(args.output_dir, "head_masks.pt"))
+    torch.save(filter_masks, os.path.join(args.output_dir, "filter_masks.pt"))
 
 
 if __name__ == "__main__":
