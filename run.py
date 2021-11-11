@@ -37,12 +37,12 @@ parser.add_argument("--task_name", type=str, required=True, choices=[
     "qqp",
 ])
 parser.add_argument("--ckpt_dir", type=str, required=True)
+parser.add_argument("--dataset", required=True, choices=["train", "dev"])
 parser.add_argument("--sample_ratio", type=float, default=0.1)
 parser.add_argument("--search_algo", required=True, choices=[
     "random",
     "evolution",
 ])
-parser.add_argument("--dataset", required=True, choices=["train", "dev"])
 parser.add_argument("--num_iter", type=int, default=100)
 parser.add_argument("--mac_threshold", type=float, default=0.7)
 parser.add_argument("--gpu", type=int, default=0)
@@ -108,8 +108,8 @@ def main():
     test_dataloader = glue_dataloader(
         args.task_name,
         tokenizer,
-        traing=False,
-        batch_size=256,
+        training=False,
+        batch_size=512,
     )
 
     if args.dataset == "train":
@@ -130,7 +130,7 @@ def main():
     if args.sample_ratio == 1.0:
         sample_dataloader = DataLoader(
             sample_dataset,
-            batch_size=256,
+            batch_size=512,
             collate_fn=default_data_collator,
             pin_memory=True,
         )
@@ -140,7 +140,7 @@ def main():
         sample_dataloader = DataLoader(
             sample_dataset,
             sampler=sample_sampler,
-            batch_size=256,
+            batch_size=512,
             collate_fn=default_data_collator,
             pin_memory=True,
         )
@@ -148,7 +148,7 @@ def main():
             test_dataloader = DataLoader(
                 sample_dataset,
                 sampler=others_sampler,
-                batch_size=256,
+                batch_size=512,
                 collate_fn=default_data_collator,
                 pin_memory=True,
             )
@@ -156,7 +156,7 @@ def main():
     avg_seq_len = get_seq_len(sample_dataloader)
     logger.info(f"Average sequence length: {avg_seq_len}")
 
-    acc_predictor = SampleAccuracyPredictor(model, sample_dataloader, metric)
+    acc_predictor = SampleAccuracyPredictor(model, args.task_name, sample_dataloader, metric)
     mac_predictor = MACPredictor(config, avg_seq_len)
 
     if args.search_algo == "evolution":
