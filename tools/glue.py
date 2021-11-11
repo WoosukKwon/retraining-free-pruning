@@ -38,16 +38,16 @@ def max_seq_length(task_name):
 
 def target_dev_metric(task_name):
     TASK_TO_DEV_METRIC = {
-        "stsb": "eval_spearmanr",
-        "mrpc": "eval_accuracy",
-        "rte": "eval_accuracy",
-        "sst2": "eval_accuracy",
-        "qqp": "eval_accuracy",
-        "qnli": "eval_accuracy",
-        "cola": "eval_matthews_correlation",
-        "mnli": "eval_accuracy",
-        "mnli-m": "eval_accuracy",
-        "mnli-mm": "eval_accuracy",
+        "stsb": "spearmanr",
+        "mrpc": "accuracy",
+        "rte": "accuracy",
+        "sst2": "accuracy",
+        "qqp": "accuracy",
+        "qnli": "accuracy",
+        "cola": "matthews_correlation",
+        "mnli": "accuracy",
+        "mnli-m": "accuracy",
+        "mnli-mm": "accuracy",
     }
     return TASK_TO_DEV_METRIC[task_name]
 

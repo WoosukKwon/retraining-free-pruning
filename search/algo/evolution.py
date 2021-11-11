@@ -13,7 +13,7 @@ class EvolutionFinder:
         self.efficiency_predictor = efficiency_predictor
         self.accuracy_predictor = accuracy_predictor
 
-        self.arch_mutate_prob = kwargs.get('arch_mutate_prob', 0.1)
+        self.mutate_prob = kwargs.get('mutate_prob', 0.1)
         self.population_size = kwargs.get('population_size', 100)
         self.parent_ratio = kwargs.get('parent_ratio', 0.25)
         self.mutation_ratio = kwargs.get('mutation_ratio', 0.5)
@@ -35,19 +35,21 @@ class EvolutionFinder:
             if efficiency <= mac_threshold:
                 return sample, efficiency
 
-    def mutate_arch(self, config):
+    def mutate_arch(self, config, mac_threshold):
         head_masks = config["head_masks"]
         filter_masks = config["filter_masks"]
+        head_prob = torch.ones(self.config.num_attention_heads) * mac_threshold
+        filter_prob = torch.ones(self.config.num_filter_groups) * mac_threshold
         for i in range(self.config.num_hidden_layers):
             if torch.rand(1).item() < self.mutate_prob:
-                head_masks[i] = torch.bernoulli(self.head_prob).cuda()
+                head_masks[i] = torch.bernoulli(head_prob).cuda()
             if torch.rand(1).item() < self.mutate_prob:
-                filter_masks[i] = torch.bernoulli(self.filter_prob).cuda()
+                filter_masks[i] = torch.bernoulli(filter_prob).cuda()
 
     def mutate_sample(self, sample, mac_threshold):
         while True:
             new_sample = copy.deepcopy(sample)
-            self.mutate_arch(new_sample)
+            self.mutate_arch(new_sample, mac_threshold)
             efficiency = self.efficiency_predictor.get_efficiency(new_sample)
             if efficiency <= mac_threshold:
                 return new_sample, efficiency
@@ -124,4 +126,4 @@ class EvolutionFinder:
 
                 t.update(1)
 
-        return best_info
+        return best_info[1]

@@ -1,12 +1,16 @@
 import torch
 
+from tools.glue import target_dev_metric
+
 
 class SampleAccuracyPredictor:
 
-    def __init__(self, model, dataloader, metric):
+    def __init__(self, model, task_name, dataloader, metric):
         self.model = model.eval()
+        self.task_name = task_name
         self.eval_dataloader = dataloader
         self.metric = metric
+        self.target_metric = target_dev_metric(self.task_name)
 
     @torch.no_grad()
     def predict_acc(self, configs):
@@ -34,6 +38,6 @@ class SampleAccuracyPredictor:
                     references=batch["labels"],
                 )
             eval_metric = self.metric.compute()
-            accuracy = eval_metric["accuracy"] # FIXME
+            accuracy = eval_metric[self.target_metric] # FIXME
             accs.append(accuracy)
         return accs
