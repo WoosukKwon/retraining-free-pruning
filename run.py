@@ -11,8 +11,7 @@ from transformers import AutoTokenizer, default_data_collator, set_seed
 
 from models.bert.config import BertConfig
 from models.bert.model import BertForSequenceClassification
-from tools.glue import glue_dataloader, max_seq_length, glue_dataset
-from tools.mac import compute_mac
+from tools.glue import glue_dataloader, max_seq_length, glue_dataset, target_dev_metric
 from tools.partition import partition_dataset
 from search.algo.evolution import EvolutionFinder
 from search.algo.random import RandomFinder
@@ -186,7 +185,8 @@ def main():
                 references=batch["labels"],
             )
     eval_metric = metric.compute()
-    accuracy = eval_metric["accuracy"] * 100.0 # FIXME
+    target_metric = target_dev_metric(args.task_name)
+    accuracy = eval_metric[target_metric] # FIXME
     logger.info(f"Test accuracy: {accuracy:.2f}")
 
 

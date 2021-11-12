@@ -126,4 +126,4 @@ class EvolutionFinder:
 
                 t.update(1)
 
-        return best_info[1]
+        return best_info[1]["head_masks"], best_info[1]["filter_masks"]
