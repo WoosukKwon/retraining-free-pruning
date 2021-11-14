@@ -7,8 +7,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from datasets import load_metric
-from transformers import AutoTokenizer, default_data_collator, set_seed
-from transformers.data.data_collator import DataCollatorWithPadding
+from transformers import AutoTokenizer, set_seed, DataCollatorWithPadding
 
 from models.bert.config import BertConfig
 from models.bert.model import BertForSequenceClassification
@@ -175,6 +174,11 @@ def main():
     head_masks, filter_masks = finder.search(args.num_iter, args.mac_threshold)
     torch.save(head_masks, os.path.join(args.log_dir, "head_masks.pt"))
     torch.save(filter_masks, os.path.join(args.log_dir, "filter_masks.pt"))
+    mac_ratio = mac_predictor.get_efficiency({
+        "head_masks": head_masks,
+        "filter_masks": filter_masks,
+    })
+    logger.info(f"Best config MAC: {mac_ratio * 100.0:.2f} %")
 
     metric = load_metric("glue", args.task_name)
     model.eval()
