@@ -163,6 +163,8 @@ def main():
     elif args.search_algo == "random":
         finder = RandomFinder(config, acc_predictor, mac_predictor, logger)
     head_masks, filter_masks = finder.search(args.num_iter, args.mac_threshold)
+    torch.save(head_masks, os.path.join(args.log_dir, "head_masks.pt"))
+    torch.save(filter_masks, os.path.join(args.log_dir, "filter_masks.pt"))
 
     model.eval()
     with torch.no_grad():
