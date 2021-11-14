@@ -8,6 +8,7 @@ import torch
 from torch.utils.data import DataLoader
 from datasets import load_metric
 from transformers import AutoTokenizer, default_data_collator, set_seed
+from transformers.data.data_collator import DataCollatorWithPadding
 
 from models.bert.config import BertConfig
 from models.bert.model import BertForSequenceClassification
@@ -106,33 +107,30 @@ def main():
     )
     metric = load_metric("glue", args.task_name)
 
-    test_dataloader = glue_dataloader(
-        args.task_name,
-        tokenizer,
-        training=False,
-        batch_size=512,
-    )
-
+    collate_fn = DataCollatorWithPadding(tokenizer)
     if args.dataset == "train":
         sample_dataset = glue_dataset(
             args.task_name,
             tokenizer,
             training=True,
             max_seq_len=max_seq_length(args.task_name),
+            pad_to_max=False,
         )
     else:
+        # dev set
         sample_dataset = glue_dataset(
             args.task_name,
             tokenizer,
             training=False,
             max_seq_len=max_seq_length(args.task_name),
+            pad_to_max=False,
         )
 
     if args.sample_ratio == 1.0:
         sample_dataloader = DataLoader(
             sample_dataset,
             batch_size=512,
-            collate_fn=default_data_collator,
+            collate_fn=collate_fn,
             pin_memory=True,
         )
     else:
@@ -142,20 +140,29 @@ def main():
             sample_dataset,
             sampler=sample_sampler,
             batch_size=512,
-            collate_fn=default_data_collator,
+            collate_fn=collate_fn,
             pin_memory=True,
         )
-        if args.dataset == "dev":
-            test_dataloader = DataLoader(
-                sample_dataset,
-                sampler=others_sampler,
-                batch_size=512,
-                collate_fn=default_data_collator,
-                pin_memory=True,
-            )
+
+    if args.dataset == "dev" and args.sample_ratio != 1.0:
+        test_dataloader = DataLoader(
+            sample_dataset,
+            sampler=others_sampler,
+            batch_size=512,
+            collate_fn=collate_fn,
+            pin_memory=True,
+        )
+    else:
+        test_dataloader = glue_dataloader(
+            args.task_name,
+            tokenizer,
+            training=False,
+            batch_size=512,
+            pad_to_max=False,
+        )
 
     avg_seq_len = get_seq_len(sample_dataloader)
-    logger.info(f"Average sequence length: {avg_seq_len}")
+    logger.info(f"Sample average sequence length: {avg_seq_len}")
 
     acc_predictor = SampleAccuracyPredictor(model, args.task_name, sample_dataloader, metric)
     mac_predictor = MACPredictor(config, avg_seq_len)
@@ -169,6 +176,7 @@ def main():
     torch.save(head_masks, os.path.join(args.log_dir, "head_masks.pt"))
     torch.save(filter_masks, os.path.join(args.log_dir, "filter_masks.pt"))
 
+    metric = load_metric("glue", args.task_name)
     model.eval()
     with torch.no_grad():
         for batch in tqdm(test_dataloader):
@@ -192,7 +200,7 @@ def main():
     eval_metric = metric.compute()
     target_metric = target_dev_metric(args.task_name)
     accuracy = eval_metric[target_metric] # FIXME
-    logger.info(f"Test accuracy: {accuracy:.2f}")
+    logger.info(f"Test accuracy: {accuracy:.4f}")
 
 
 if __name__ == "__main__":
