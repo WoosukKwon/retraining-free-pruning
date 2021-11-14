@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import DataLoader
 from transformers import default_data_collator
 from datasets import load_dataset
+from transformers.data.data_collator import DataCollatorWithPadding
 
 
 def num_labels(task_name):
@@ -100,14 +101,14 @@ def glue_dataset(task_name, tokenizer, training, max_seq_len, pad_to_max=True):
         return preprocessed["validation_matched" if task_name == "mnli" else "validation"]
 
 
-def glue_dataloader(task_name, tokenizer, training, batch_size=32, max_seq_len=None):
+def glue_dataloader(task_name, tokenizer, training, batch_size=32, max_seq_len=None, pad_to_max=True):
     if max_seq_len is None:
         max_seq_len = max_seq_length(task_name)
-    dataset = glue_dataset(task_name, tokenizer, training, max_seq_len, pad_to_max=True)
+    dataset = glue_dataset(task_name, tokenizer, training, max_seq_len, pad_to_max=pad_to_max)
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=training,
-        collate_fn=default_data_collator,
+        collate_fn=default_data_collator if pad_to_max else DataCollatorWithPadding(tokenizer),
     )
     return dataloader
