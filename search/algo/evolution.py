@@ -8,22 +8,26 @@ import torch
 
 class EvolutionFinder:
 
-    def __init__(self, model_config, accuracy_predictor, efficiency_predictor, logger, **kwargs):
+    def __init__(self, model_config, accuracy_predictor, efficiency_predictor, logger, ranked=False, **kwargs):
         self.config = model_config
         self.accuracy_predictor = accuracy_predictor
         self.efficiency_predictor = efficiency_predictor
         self.logger = logger
+        self.ranked = ranked
 
         self.mutate_prob = kwargs.get('mutate_prob', 0.1)
         self.population_size = kwargs.get('population_size', 100)
         self.parent_ratio = kwargs.get('parent_ratio', 0.25)
         self.mutation_ratio = kwargs.get('mutation_ratio', 0.5)
 
-    def random_sample_arch(self, mac_threshold, ranked=False):
+    def random_sample_arch(self, mac_threshold):
         head_prob = torch.ones(self.config.num_attention_heads) * mac_threshold
         filter_prob = torch.ones(self.config.num_filter_groups) * mac_threshold
         head_masks = [torch.bernoulli(head_prob).cuda() for _ in range(self.config.num_hidden_layers)]
         filter_masks = [torch.bernoulli(filter_prob).cuda() for _ in range(self.config.num_hidden_layers)]
+        if self.ranked:
+            head_masks = [torch.sort(head_mask, descending=True)[0] for head_mask in head_masks]
+            filter_masks = [torch.sort(filter_mask, descending=True)[0] for filter_mask in filter_masks]
         return {
             "head_masks": head_masks,
             "filter_masks": filter_masks,
@@ -43,9 +47,11 @@ class EvolutionFinder:
         filter_prob = torch.ones(self.config.num_filter_groups) * mac_threshold
         for i in range(self.config.num_hidden_layers):
             if torch.rand(1).item() < self.mutate_prob:
-                head_masks[i] = torch.bernoulli(head_prob).cuda()
+                mask = torch.bernoulli(head_prob).cuda()
+                head_masks[i] = torch.sort(mask, descending=True)[0] if self.ranked else mask
             if torch.rand(1).item() < self.mutate_prob:
-                filter_masks[i] = torch.bernoulli(filter_prob).cuda()
+                mask = torch.bernoulli(filter_prob).cuda()
+                filter_masks[i] = torch.sort(mask, descending=True)[0] if self.ranked else mask
 
     def mutate_sample(self, sample, mac_threshold):
         while True:

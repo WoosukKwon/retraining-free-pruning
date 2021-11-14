@@ -37,13 +37,14 @@ parser.add_argument("--task_name", type=str, required=True, choices=[
 ])
 parser.add_argument("--ckpt_dir", type=str, required=True)
 parser.add_argument("--dataset", required=True, choices=["train", "dev"])
-parser.add_argument("--sample_ratio", type=float, default=0.1)
+parser.add_argument("--sample_ratio", type=float, default=1.0)
 parser.add_argument("--search_algo", required=True, choices=[
     "random",
     "evolution",
 ])
+parser.add_argument("--ranked", action="store_true")
 parser.add_argument("--num_iter", type=int, default=100)
-parser.add_argument("--mac_threshold", type=float, default=0.7)
+parser.add_argument("--mac_threshold", type=float, default=0.6)
 parser.add_argument("--gpu", type=int, default=0)
 parser.add_argument("--tokenizer", type=str, default= None)
 parser.add_argument("--seed", type=int, default=0)
@@ -74,6 +75,7 @@ def main():
             f"mac_{args.mac_threshold}",
             args.dataset,
             f"sample_{args.sample_ratio}",
+            "ranked" if args.ranked else "unranked",
             f"num_iter_{args.num_iter}",
             f"seed_{args.seed}",
         )
@@ -159,9 +161,10 @@ def main():
     mac_predictor = MACPredictor(config, avg_seq_len)
 
     if args.search_algo == "evolution":
-        finder = EvolutionFinder(config, acc_predictor, mac_predictor, logger)
+        finder = EvolutionFinder(config, acc_predictor, mac_predictor, logger, ranked=args.ranked)
     elif args.search_algo == "random":
-        finder = RandomFinder(config, acc_predictor, mac_predictor, logger)
+        finder = RandomFinder(config, acc_predictor, mac_predictor, logger, ranked=args.ranked)
+
     head_masks, filter_masks = finder.search(args.num_iter, args.mac_threshold)
     torch.save(head_masks, os.path.join(args.log_dir, "head_masks.pt"))
     torch.save(filter_masks, os.path.join(args.log_dir, "filter_masks.pt"))
