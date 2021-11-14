@@ -48,6 +48,7 @@ def main():
         tokenizer=tokenizer,
         training=False,
         batch_size=128,
+        pad_to_max=False,
     )
     metric = load_metric("glue", args.task_name)
 
@@ -61,7 +62,7 @@ def main():
     model.eval()
     with torch.no_grad():
         head_masks = [torch.ones(config.num_attention_heads).cuda() for _ in range(config.num_hidden_layers)]
-        filter_masks = [torch.ones(config.num_attention_heads).cuda() for _ in range(config.num_hidden_layers)]
+        filter_masks = [torch.ones(config.num_filter_groups).cuda() for _ in range(config.num_hidden_layers)]
 
         for batch in tqdm(eval_dataloader):
             outputs = model(
