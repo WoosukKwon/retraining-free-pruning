@@ -22,6 +22,7 @@ class RandomFinder:
         ]
 
         best_acc = 0
+        best_mac = 0
         best_config = None
         i = 0
         progress_bar = tqdm(range(num_iter))
@@ -43,9 +44,10 @@ class RandomFinder:
             acc = self.acc_predictor.predict_acc([config])[0]
             if acc > best_acc:
                 best_acc = acc
+                best_mac = mac_ratio
                 best_config = config
             progress_bar.set_postfix({"acc": best_acc})
-            self.logger.info(f"Iter {i} Acc: {best_acc}")
+            self.logger.info(f"Iter {i} Acc: {best_acc} MAC: {best_mac}")
             i += 1
             progress_bar.update(1)
         return best_config["head_masks"], best_config["filter_masks"]
