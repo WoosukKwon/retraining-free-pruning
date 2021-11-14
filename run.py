@@ -159,9 +159,9 @@ def main():
     mac_predictor = MACPredictor(config, avg_seq_len)
 
     if args.search_algo == "evolution":
-        finder = EvolutionFinder(config, acc_predictor, mac_predictor)
+        finder = EvolutionFinder(config, acc_predictor, mac_predictor, logger)
     elif args.search_algo == "random":
-        finder = RandomFinder(config, acc_predictor, mac_predictor)
+        finder = RandomFinder(config, acc_predictor, mac_predictor, logger)
     head_masks, filter_masks = finder.search(args.num_iter, args.mac_threshold)
 
     model.eval()
