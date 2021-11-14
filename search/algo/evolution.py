@@ -100,7 +100,7 @@ class EvolutionFinder:
                 parents = sorted(population, key=lambda x: x[0])[::-1][:parents_size]
                 acc = parents[0][0]
                 t.set_postfix({"acc'": parents[0][0]})
-                self.logger.info(f"Iter: {i+1} Acc: {parents[0][0]}")
+                self.logger.info(f"Iter: {i+1} Acc: {parents[0][0]} MAC: {parents[0][2]}")
 
                 if acc > best_valids[-1]:
                     best_valids.append(acc)
