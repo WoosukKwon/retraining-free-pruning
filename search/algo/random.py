@@ -4,10 +4,11 @@ import torch
 
 class RandomFinder:
 
-    def __init__(self, model_config, acc_predictor, efficiency_predictor):
+    def __init__(self, model_config, acc_predictor, efficiency_predictor, logger):
         self.config = model_config
         self.acc_predictor = acc_predictor
         self.efficiency_predictor = efficiency_predictor
+        self.logger = logger
 
     def search(self, num_iter, mac_threshold):
         head_probs = [
@@ -37,6 +38,7 @@ class RandomFinder:
             if acc > best_acc:
                 best_acc = acc
             progress_bar.set_postfix({"acc": best_acc})
+            self.logger.info(f"Iter {i} Acc: {best_acc}")
             i += 1
             progress_bar.update(1)
         return config

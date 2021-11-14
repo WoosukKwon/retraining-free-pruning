@@ -8,17 +8,18 @@ import torch
 
 class EvolutionFinder:
 
-    def __init__(self, model_config, accuracy_predictor, efficiency_predictor, **kwargs):
+    def __init__(self, model_config, accuracy_predictor, efficiency_predictor, logger, **kwargs):
         self.config = model_config
-        self.efficiency_predictor = efficiency_predictor
         self.accuracy_predictor = accuracy_predictor
+        self.efficiency_predictor = efficiency_predictor
+        self.logger = logger
 
         self.mutate_prob = kwargs.get('mutate_prob', 0.1)
         self.population_size = kwargs.get('population_size', 100)
         self.parent_ratio = kwargs.get('parent_ratio', 0.25)
         self.mutation_ratio = kwargs.get('mutation_ratio', 0.5)
 
-    def random_sample_arch(self, mac_threshold):
+    def random_sample_arch(self, mac_threshold, ranked=False):
         head_prob = torch.ones(self.config.num_attention_heads) * mac_threshold
         filter_prob = torch.ones(self.config.num_filter_groups) * mac_threshold
         head_masks = [torch.bernoulli(head_prob).cuda() for _ in range(self.config.num_hidden_layers)]
@@ -77,7 +78,7 @@ class EvolutionFinder:
         efficiency_pool = []
         best_info = None
 
-        print('Generate random population...')
+        self.logger.info("Generate random population...")
         for _ in range(self.population_size):
             sample, efficiency = self.random_valid_sample(mac_threshold)
             child_pool.append(sample)
@@ -87,13 +88,13 @@ class EvolutionFinder:
         for i in range(self.population_size):
             population.append((accs[i], child_pool[i], efficiency_pool[i]))
 
-        print('Start Evolution...')
+        self.logger.info("Start evolution...")
         with tqdm(total=num_iter, desc='Searching with mac_threshold (%s)' % mac_threshold) as t:
             for i in range(num_iter):
                 parents = sorted(population, key=lambda x: x[0])[::-1][:parents_size]
                 acc = parents[0][0]
-                t.set_postfix({'acc': parents[0][0]})
-                print('Iter: {} Acc: {}'.format(i + 1, parents[0][0]))
+                t.set_postfix({"acc'": parents[0][0]})
+                self.logger.info(f"Iter: {i+1} Acc: {parents[0][0]}")
 
                 if acc > best_valids[-1]:
                     best_valids.append(acc)
