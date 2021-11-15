@@ -39,11 +39,22 @@ class BertModel(BertPreTrainedModel):
         self,
         input_ids,
         attention_mask,
+        token_type_ids=None,
         head_masks=None,
         filter_masks=None,
         temp=None,
     ):
-        embedding_output = self.embeddings(input_ids=input_ids)
+        input_shape = input_ids.size()
+        batch_size, seq_length = input_shape
+        device = input_ids.device
+        if token_type_ids is None:
+            if hasattr(self.embeddings, "token_type_ids"):
+                buffered_token_type_ids = self.embeddings.token_type_ids[:, :seq_length]
+                buffered_token_type_ids_expanded = buffered_token_type_ids.expand(batch_size, seq_length)
+                token_type_ids = buffered_token_type_ids_expanded
+            else:
+                token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
+        embedding_output = self.embeddings(input_ids=input_ids, token_type_ids=token_type_ids)
         attention_mask = self.get_extended_attention_mask(
             attention_mask,
             input_ids.size(),
@@ -90,6 +101,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
         self,
         input_ids,
         attention_mask,
+        token_type_ids=None,
         head_masks=None,
         filter_masks=None,
         temp=None,
@@ -98,6 +110,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
         outputs = self.bert(
             input_ids,
             attention_mask,
+            token_type_ids=token_type_ids,
             head_masks=head_masks,
             filter_masks=filter_masks,
             temp=temp,
@@ -143,6 +156,7 @@ class BertForQuestionAnswering(BertPreTrainedModel):
         self,
         input_ids,
         attention_mask,
+        token_type_ids=None,
         head_masks=None,
         filter_masks=None,
         temp=None,
@@ -152,6 +166,7 @@ class BertForQuestionAnswering(BertPreTrainedModel):
         outputs = self.bert(
             input_ids,
             attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
             head_masks=head_masks,
             filter_masks=filter_masks,
             temp=temp,
