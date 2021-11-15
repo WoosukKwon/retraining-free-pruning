@@ -44,16 +44,6 @@ class BertModel(BertPreTrainedModel):
         filter_masks=None,
         temp=None,
     ):
-        input_shape = input_ids.size()
-        batch_size, seq_length = input_shape
-        device = input_ids.device
-        if token_type_ids is None:
-            if hasattr(self.embeddings, "token_type_ids"):
-                buffered_token_type_ids = self.embeddings.token_type_ids[:, :seq_length]
-                buffered_token_type_ids_expanded = buffered_token_type_ids.expand(batch_size, seq_length)
-                token_type_ids = buffered_token_type_ids_expanded
-            else:
-                token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
         embedding_output = self.embeddings(input_ids=input_ids, token_type_ids=token_type_ids)
         attention_mask = self.get_extended_attention_mask(
             attention_mask,
