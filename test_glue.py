@@ -19,6 +19,7 @@ MODELS = {
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_name", type=str, required=True, choices=MODELS.keys())
 parser.add_argument("--task_name", type=str, required=True, choices=[
+    "mnli",
     "mrpc",
     "rte",
     "stsb",
