@@ -26,6 +26,7 @@ class SampleAccuracyPredictor:
                 outputs = self.model(
                     input_ids=batch["input_ids"],
                     attention_mask=batch["attention_mask"],
+                    token_type_ids=batch["token_type_ids"],
                     head_masks=head_masks,
                     filter_masks=filter_masks,
                 )

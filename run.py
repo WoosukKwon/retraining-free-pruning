@@ -28,6 +28,7 @@ MODELS = {
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_name", type=str, required=True, choices=MODELS.keys())
 parser.add_argument("--task_name", type=str, required=True, choices=[
+    "mnli",
     "mrpc",
     "rte",
     "stsb",
@@ -190,6 +191,7 @@ def main():
             outputs = model(
                 input_ids=batch["input_ids"],
                 attention_mask=batch["attention_mask"],
+                token_type_ids=batch["token_type_ids"],
                 head_masks=head_masks,
                 filter_masks=filter_masks,
             )
