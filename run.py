@@ -47,11 +47,12 @@ parser.add_argument("--ranked", action="store_true")
 parser.add_argument("--num_iter", type=int, default=100)
 parser.add_argument("--mac_threshold", type=float, default=0.6)
 parser.add_argument("--gpu", type=int, default=0)
-parser.add_argument("--tokenizer", type=str, default= None)
+parser.add_argument("--tokenizer", type=str, default=None)
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--log_dir", type=str, default=None)
 
 
+@torch.no_grad()
 def get_seq_len(dataloader):
     val = 0.0
     cnt = 0
@@ -133,6 +134,7 @@ def main():
             collate_fn=collate_fn,
             pin_memory=True,
         )
+        logger.info(f"# search examples: {len(sample_dataset)}")
     else:
         ratios = [1 - args.sample_ratio, args.sample_ratio]
         others_sampler, sample_sampler = partition_dataset(sample_dataset, ratios)
@@ -143,6 +145,7 @@ def main():
             collate_fn=collate_fn,
             pin_memory=True,
         )
+        logger.info(f"# search examples: {len(sample_sampler)}")
 
     if args.dataset == "dev" and args.sample_ratio != 1.0:
         test_dataloader = DataLoader(
@@ -152,6 +155,7 @@ def main():
             collate_fn=collate_fn,
             pin_memory=True,
         )
+        logger.info(f"# test examples: {len(others_sampler)}")
     else:
         test_dataloader = glue_dataloader(
             args.task_name,
@@ -160,12 +164,19 @@ def main():
             batch_size=512,
             pad_to_max=False,
         )
+        logger.info(f"# test examples: {len(test_dataloader.dataset)}")
 
     avg_seq_len = get_seq_len(sample_dataloader)
     logger.info(f"Sample average sequence length: {avg_seq_len}")
 
     acc_predictor = SampleAccuracyPredictor(model, args.task_name, sample_dataloader, metric)
     mac_predictor = MACPredictor(config, avg_seq_len)
+
+    baseline_acc = acc_predictor.predict_acc([{
+        "head_masks": [torch.ones(config.num_attention_heads).cuda() for _ in range(config.num_hidden_layers)],
+        "filter_masks": [torch.ones(config.num_filter_groups).cuda() for _ in range(config.num_hidden_layers)],
+    }])[0]
+    logger.info(f"Full network accuracy on the sample dataset: {baseline_acc:.4f}")
 
     if args.search_algo == "evolution":
         finder = EvolutionFinder(config, acc_predictor, mac_predictor, logger, ranked=args.ranked)
