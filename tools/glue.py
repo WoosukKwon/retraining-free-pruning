@@ -5,6 +5,20 @@ from datasets import load_dataset
 from transformers.data.data_collator import DataCollatorWithPadding
 
 
+GLUE_TASKS = [
+    "stsb",
+    "mrpc",
+    "rte",
+    "sst2",
+    "qqp",
+    "qnli",
+    "cola",
+    "mnli",
+    "mnli-m",
+    "mnli-mm",
+]
+
+
 def num_labels(task_name):
     TASK_TO_NUM_LABELS = {
         "stsb": 1,
