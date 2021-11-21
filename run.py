@@ -15,6 +15,7 @@ from tools.glue import glue_dataloader, max_seq_length, glue_dataset, target_dev
 from tools.partition import partition_dataset
 from search.algo.evolution import EvolutionFinder
 from search.algo.random import RandomFinder
+from search.algo.mcmc import MCMCFinder
 from search.predictor.accuracy import SampleAccuracyPredictor
 from search.predictor.efficiency import MACPredictor
 
@@ -42,6 +43,7 @@ parser.add_argument("--sample_ratio", type=float, default=1.0)
 parser.add_argument("--search_algo", required=True, choices=[
     "random",
     "evolution",
+    "mcmc",
 ])
 parser.add_argument("--ranked", action="store_true")
 parser.add_argument("--num_iter", type=int, default=100)
@@ -182,6 +184,8 @@ def main():
         finder = EvolutionFinder(config, acc_predictor, mac_predictor, logger, ranked=args.ranked)
     elif args.search_algo == "random":
         finder = RandomFinder(config, acc_predictor, mac_predictor, logger, ranked=args.ranked)
+    elif args.search_algo == "mcmc":
+        finder = MCMCFinder(config, acc_predictor, mac_predictor, logger, ranked=args.ranked)
 
     head_masks, filter_masks = finder.search(args.num_iter, args.mac_threshold)
     torch.save(head_masks, os.path.join(args.log_dir, "head_masks.pt"))
