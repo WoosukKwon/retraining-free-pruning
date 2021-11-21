@@ -11,6 +11,7 @@ class RandomFinder:
         self.logger = logger
         self.ranked = ranked
 
+    @torch.no_grad()
     def search(self, num_iter, mac_threshold):
         head_probs = [
             torch.ones(self.config.num_attention_heads) * mac_threshold
