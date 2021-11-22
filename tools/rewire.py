@@ -1,5 +1,7 @@
 import torch
 
+from tools.rank import importance_by_magnitude, importance_by_gradient
+
 
 def reorder_linear(linear, indicies, dim):
     indicies = indicies.to(linear.weight.device)
@@ -44,43 +46,15 @@ def rewire(base_model, head_importance, neuron_importance):
         reorder_neurons(base_model.encoder.layer[i], indicies)
 
 
-def importance_by_magnitude(model, config):
-    partition_by_heads = lambda weight: weight.view(
-        config.num_attention_heads,
-        config.attention_head_size,
-        config.hidden_size,
-    ).reshape(config.num_attention_heads, -1)
-
-    base_model = getattr(model, model.base_model_prefix)
-    layers = base_model.encoder.layer
-
-    head_importance = []
-    for layer in layers:
-        self_attention = layer.attention.self
-        self_output = layer.attention.output
-
-        query_per_head = partition_by_heads(self_attention.query.weight)
-        key_per_head = partition_by_heads(self_attention.key.weight)
-        value_per_head = partition_by_heads(self_attention.value.weight)
-        out_per_head = partition_by_heads(self_output.dense.weight.t())
-
-        abs_sum = torch.abs(query_per_head) + torch.abs(key_per_head) + torch.abs(value_per_head) + torch.abs(out_per_head)
-        importance = abs_sum.sum(dim=1)
-        head_importance.append(importance)
-
-    neuron_importance = []
-    for layer in layers:
-        ffn1_per_neuron = layer.intermediate.dense.weight
-        ffn2_per_neuron = layer.output.dense.weight.t()
-        abs_sum = torch.abs(ffn1_per_neuron) + torch.abs(ffn2_per_neuron)
-        importance = abs_sum.sum(dim=1)
-        neuron_importance.append(importance)
-
-    return head_importance, neuron_importance
-
-
 def rewire_by_magnitude(model):
     base_model = getattr(model, model.base_model_prefix)
     config = base_model.config
     head_importance, neuron_importance = importance_by_magnitude(model, config)
+    rewire(base_model, head_importance, neuron_importance)
+
+
+def rewire_by_gradient(model, dataloader, absolute=True):
+    base_model = getattr(model, model.base_model_prefix)
+    config = base_model.config
+    head_importance, neuron_importance = importance_by_gradient(model, config, dataloader, absolute=absolute)
     rewire(base_model, head_importance, neuron_importance)
