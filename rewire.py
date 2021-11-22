@@ -22,6 +22,7 @@ parser.add_argument("--task_name", type=str, choices=[
     "sst2",
     "qnli",
     "qqp",
+    "mnli",
     "squad",
     "squad_v2",
 ])
