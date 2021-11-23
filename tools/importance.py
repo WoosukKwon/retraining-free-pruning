@@ -34,6 +34,8 @@ def importance_by_gradient(model, config, dataloader, absolute=True):
     for batch in tqdm(dataloader):
         batch["head_masks"] = head_mask
         batch["filter_masks"] = filter_mask
+        for k, v in batch.items():
+            batch[k] = v.to("cuda", non_blocking=True)
 
         outputs = model(**batch)
         loss = outputs.loss
@@ -47,8 +49,8 @@ def importance_by_gradient(model, config, dataloader, absolute=True):
             output_weight,
             neuron_importance
         ):
-            w1_importance = ((w1 * w1.grad).sum(dim=1) + b1 * b1.grad).abs().detach()
-            w2_importance = ((w2 * w2.grad).sum(dim=0)).abs().detach()
+            w1_importance = ((w1 * w1.grad).sum(dim=1) + b1 * b1.grad).detach()
+            w2_importance = ((w2 * w2.grad).sum(dim=0)).detach()
             if absolute:
                 w1_importance = w1_importance.abs()
                 w2_importance = w2_importance.abs()
