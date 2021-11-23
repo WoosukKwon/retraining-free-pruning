@@ -1,6 +1,6 @@
 import torch
 
-from tools.rank import importance_by_magnitude, importance_by_gradient
+from tools.importance import importance_by_magnitude, importance_by_gradient
 
 
 def reorder_linear(linear, indicies, dim):
