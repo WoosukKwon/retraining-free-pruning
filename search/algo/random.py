@@ -51,4 +51,4 @@ class RandomFinder:
             self.logger.info(f"Iter {i} Acc: {best_acc} MAC: {best_mac}")
             i += 1
             progress_bar.update(1)
-        return best_config["head_masks"], best_config["filter_masks"]
+        return best_config

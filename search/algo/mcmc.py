@@ -86,4 +86,4 @@ class MCMCFinder:
                 self.logger.info(f"Iter {i}  Current Acc: {curr_acc} Best Acc: {best_acc} MAC: {best_mac}")
                 i += 1
                 progress_bar.update(1)
-        return best_config["head_masks"], best_config["filter_masks"]
+        return best_config
