@@ -2,20 +2,21 @@ import argparse
 import logging
 import os
 
-from tqdm import tqdm
-import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from datasets import load_metric
 from transformers import AutoTokenizer, set_seed, DataCollatorWithPadding
 
 from models.bert.config import BertConfig
-from models.bert.model import BertForSequenceClassification
-from tools.glue import glue_dataloader, max_seq_length, glue_dataset, target_dev_metric
+from models.bert.model import BertForQuestionAnswering, BertForSequenceClassification
+from tools.glue import glue_dataloader, max_seq_length, glue_dataset
+from tools.squad import squad_dataset
 from tools.partition import partition_dataset
-from search.algo.evolution import EvolutionFinder
+from tools.importance import importance_by_gradient
 from search.algo.random import RandomFinder
+from search.algo.evolution import EvolutionFinder
 from search.algo.mcmc import MCMCFinder
+from search.algo.lp import LPFinder
 from search.predictor.accuracy import SampleAccuracyPredictor
 from search.predictor.efficiency import MACPredictor
 
@@ -23,7 +24,7 @@ from search.predictor.efficiency import MACPredictor
 logger = logging.getLogger(__name__)
 
 MODELS = {
-    "bert-base-uncased": (BertConfig, BertForSequenceClassification),
+    "bert-base-uncased": (BertConfig, BertForSequenceClassification, BertForQuestionAnswering),
 }
 
 parser = argparse.ArgumentParser()
@@ -36,6 +37,8 @@ parser.add_argument("--task_name", type=str, required=True, choices=[
     "sst2",
     "qnli",
     "qqp",
+    "squad",
+    "squad_v2",
 ])
 parser.add_argument("--ckpt_dir", type=str, required=True)
 parser.add_argument("--dataset", required=True, choices=["train", "dev"])
@@ -44,6 +47,7 @@ parser.add_argument("--search_algo", required=True, choices=[
     "random",
     "evolution",
     "mcmc",
+    "lp",
 ])
 parser.add_argument("--ranked", action="store_true")
 parser.add_argument("--num_iter", type=int, default=100)
@@ -52,6 +56,7 @@ parser.add_argument("--gpu", type=int, default=0)
 parser.add_argument("--tokenizer", type=str, default=None)
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--log_dir", type=str, default=None)
+parser.add_argument("--comment", type=str, default=None)
 
 
 @torch.no_grad()
@@ -95,78 +100,100 @@ def main():
         ],
     )
     logger.info(args)
+    if args.comment is not None:
+        logger.info(args.comment)
 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
     set_seed(args.seed)
     logger.info(f"Seed number: {args.seed}")
-    
+
+    is_squad = "squad" in args.task_name
+
     config = MODELS[args.model_name][0].from_pretrained(args.ckpt_dir)
-    model = MODELS[args.model_name][1].from_pretrained(args.ckpt_dir, config=config)
+    if is_squad:
+        model = MODELS[args.model_name][2].from_pretrained(args.ckpt_dir, config=config)
+    else:
+        model = MODELS[args.model_name][1].from_pretrained(args.ckpt_dir, config=config)
     model = model.cuda()
+
     tokenizer = AutoTokenizer.from_pretrained(
         args.tokenizer,
         use_fast=True,
         use_auth_token=None,
     )
-    metric = load_metric("glue", args.task_name)
+    metric = load_metric(args.task_name) if is_squad else load_metric("glue", args.task_name)
 
     collate_fn = DataCollatorWithPadding(tokenizer)
-    if args.dataset == "train":
-        sample_dataset = glue_dataset(
-            args.task_name,
-            tokenizer,
-            training=True,
-            max_seq_len=max_seq_length(args.task_name),
-            pad_to_max=False,
-        )
+    if is_squad:
+        if args.dataset == "train":
+            sample_dataset = squad_dataset(
+                args.task_name,
+                tokenizer,
+                training=True,
+                max_seq_len=384,
+                pad_to_max=False,
+            )
+        else:
+            raise NotImplementedError("Use train set for the SQuAD datasets") # FIXME
     else:
-        # dev set
         sample_dataset = glue_dataset(
             args.task_name,
             tokenizer,
-            training=False,
+            training=args.dataset == "train",
             max_seq_len=max_seq_length(args.task_name),
             pad_to_max=False,
         )
 
+    sample_batch_size = 128 if is_squad else 512
     if args.sample_ratio == 1.0:
-        sample_dataloader = DataLoader(
-            sample_dataset,
-            batch_size=512,
-            collate_fn=collate_fn,
-            pin_memory=True,
-        )
-        logger.info(f"# search examples: {len(sample_dataset)}")
+        ratios = [1.0]
     else:
         ratios = [1 - args.sample_ratio, args.sample_ratio]
-        others_sampler, sample_sampler = partition_dataset(sample_dataset, ratios)
-        sample_dataloader = DataLoader(
-            sample_dataset,
-            sampler=sample_sampler,
-            batch_size=512,
-            collate_fn=collate_fn,
-            pin_memory=True,
-        )
-        logger.info(f"# search examples: {len(sample_sampler)}")
+    samplers = partition_dataset(sample_dataset, ratios)
+    sample_sampler = samplers[-1]
+    sample_dataloader = DataLoader(
+        sample_dataset,
+        sampler=sample_sampler,
+        batch_size=sample_batch_size,
+        collate_fn=collate_fn,
+        pin_memory=True,
+    )
+    logger.info(f"# search examples: {len(sample_sampler)}")
 
-    if args.dataset == "dev" and args.sample_ratio != 1.0:
+    if args.dataset == "dev":
+        test_sampler = samplers[0]
         test_dataloader = DataLoader(
             sample_dataset,
-            sampler=others_sampler,
-            batch_size=512,
+            sampler=test_sampler,
+            batch_size=sample_batch_size,
             collate_fn=collate_fn,
             pin_memory=True,
         )
-        logger.info(f"# test examples: {len(others_sampler)}")
+        logger.info(f"# test examples: {len(test_sampler)}")
     else:
-        test_dataloader = glue_dataloader(
-            args.task_name,
-            tokenizer,
-            training=False,
-            batch_size=512,
-            pad_to_max=False,
-        )
-        logger.info(f"# test examples: {len(test_dataloader.dataset)}")
+        if is_squad:
+            squad_dev_set, squad_dev_examples = squad_dataset(
+                args.task_name,
+                tokenizer,
+                training=False,
+                max_seq_len=384,
+                pad_to_max=False,
+            )
+            test_dataloader = DataLoader(
+                squad_dev_set.remove_columns(["example_id", "offset_mapping"]),
+                batch_size=sample_batch_size,
+                shuffle=False,
+                collate_fn=collate_fn,
+            )
+        else:
+            test_dataloader = glue_dataloader(
+                args.task_name,
+                tokenizer,
+                training=False,
+                batch_size=sample_batch_size,
+                pad_to_max=False,
+            )
+        logger.info(f"# test examples: {len(test_dataloader)}")
 
     avg_seq_len = get_seq_len(sample_dataloader)
     logger.info(f"Sample average sequence length: {avg_seq_len}")
@@ -174,11 +201,31 @@ def main():
     acc_predictor = SampleAccuracyPredictor(model, args.task_name, sample_dataloader, metric)
     mac_predictor = MACPredictor(config, avg_seq_len)
 
-    baseline_acc = acc_predictor.predict_acc([{
+    full_network_config = {
         "head_masks": [torch.ones(config.num_attention_heads).cuda() for _ in range(config.num_hidden_layers)],
         "filter_masks": [torch.ones(config.num_filter_groups).cuda() for _ in range(config.num_hidden_layers)],
-    }])[0]
-    logger.info(f"Full network accuracy on the sample dataset: {baseline_acc:.4f}")
+    }
+    if is_squad:
+        baseline_loss = acc_predictor.predict_loss([full_network_config])[0]
+        logger.info(f"Full network loss on samples: {baseline_loss:.4f}")
+    else:
+        baseline_acc = acc_predictor.predict_acc([full_network_config])[0]
+        logger.info(f"Full network acc on samples: {baseline_acc:.4f}")
+
+    if args.search_algo == "lp":
+        sample_dataloader = DataLoader(
+            sample_dataset,
+            sampler=sample_sampler,
+            batch_size=12 if is_squad else 32,
+            collate_fn=collate_fn,
+            pin_memory=True,
+        )
+        head_importance, filter_importance = importance_by_gradient(
+            model,
+            config,
+            sample_dataloader,
+            absolute=True,
+        )
 
     if args.search_algo == "evolution":
         finder = EvolutionFinder(config, acc_predictor, mac_predictor, logger, ranked=args.ranked)
@@ -186,42 +233,44 @@ def main():
         finder = RandomFinder(config, acc_predictor, mac_predictor, logger, ranked=args.ranked)
     elif args.search_algo == "mcmc":
         finder = MCMCFinder(config, acc_predictor, mac_predictor, logger, ranked=args.ranked)
+    elif args.search_algo == "lp":
+        finder = LPFinder(
+            config,
+            acc_predictor,
+            mac_predictor,
+            logger,
+            head_importance,
+            filter_importance,
+            use_loss=is_squad,
+        )
 
-    head_masks, filter_masks = finder.search(args.num_iter, args.mac_threshold)
-    torch.save(head_masks, os.path.join(args.log_dir, "head_masks.pt"))
-    torch.save(filter_masks, os.path.join(args.log_dir, "filter_masks.pt"))
-    mac_ratio = mac_predictor.get_efficiency({
-        "head_masks": head_masks,
-        "filter_masks": filter_masks,
-    })
+    best_config = finder.search(args.num_iter, args.mac_threshold)
+    mac_ratio = mac_predictor.get_efficiency(best_config)
     logger.info(f"Best config MAC: {mac_ratio * 100.0:.2f} %")
 
-    metric = load_metric("glue", args.task_name)
-    model.eval()
-    with torch.no_grad():
-        for batch in tqdm(test_dataloader):
-            for k, v in batch.items():
-                batch[k] = v.to("cuda", non_blocking=True)
+    head_masks = best_config["head_masks"]
+    filter_masks = best_config["filter_masks"]
+    torch.save(head_masks, os.path.join(args.log_dir, "head_masks.pt"))
+    torch.save(filter_masks, os.path.join(args.log_dir, "filter_masks.pt"))
 
-            outputs = model(
-                input_ids=batch["input_ids"],
-                attention_mask=batch["attention_mask"],
-                token_type_ids=batch["token_type_ids"],
-                head_masks=head_masks,
-                filter_masks=filter_masks,
-            )
-            if model.problem_type == "regression":
-                predictions = outputs.logits.squeeze()
-            else:
-                predictions = outputs.logits.argmax(dim=-1)
-            metric.add_batch(
-                predictions=predictions,
-                references=batch["labels"],
-            )
-    eval_metric = metric.compute()
-    target_metric = target_dev_metric(args.task_name)
-    accuracy = eval_metric[target_metric] # FIXME
-    logger.info(f"Test accuracy: {accuracy:.4f}")
+    if is_squad:
+        test_acc_predictor = SampleAccuracyPredictor(
+            model,
+            args.task_name,
+            test_dataloader,
+            metric,
+            squad_dev_set,
+            squad_dev_examples,
+        )
+    else:
+        test_acc_predictor = SampleAccuracyPredictor(
+            model,
+            args.task_name,
+            test_dataloader,
+            metric,
+        )
+    test_acc = test_acc_predictor.predict_acc([best_config])[0]
+    logger.info(f"Test accuracy: {test_acc:.4f}")
 
 
 if __name__ == "__main__":
