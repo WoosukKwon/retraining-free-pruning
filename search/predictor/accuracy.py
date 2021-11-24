@@ -3,6 +3,7 @@ import torch
 from tools.glue import target_dev_metric, GLUE_TASKS
 from tools.squad import post_processing_function
 from tools.qa_utils import create_and_fill_np_array
+from tools.meter import AverageMeter
 
 
 class SampleAccuracyPredictor:
@@ -10,10 +11,10 @@ class SampleAccuracyPredictor:
     def __init__(self, model, task_name, dataloader, metric, eval_dataset=None, eval_examples=None):
         self.model = model.eval()
         self.task_name = task_name
-        self.eval_dataloader = dataloader
         self.metric = metric
-        self.eval_dataset = eval_dataset
-        self.eval_examples = eval_examples
+        self.eval_dataloader = dataloader
+        self.eval_dataset = eval_dataset # NOTE: only for SQuAD
+        self.eval_examples = eval_examples # NOTE: only for SQuAD
 
     def predict_acc(self, configs):
         if self.task_name in GLUE_TASKS:
@@ -23,7 +24,27 @@ class SampleAccuracyPredictor:
             return self.predict_squad_acc(configs)
         else:
             raise NotImplementedError("Unsupported task")
-        
+
+    @torch.no_grad()
+    def predict_loss(self, configs):
+        losses =[]
+        for config in configs:
+            head_masks = config["head_masks"]
+            filter_masks = config["filter_masks"]
+            
+            avg_loss = AverageMeter("loss")
+            for batch in self.eval_dataloader:
+                for k, v in batch.items():
+                    batch[k] = v.to("cuda", non_blocking=True)
+                batch["head_masks"] = head_masks
+                batch["filter_masks"] = filter_masks
+
+                outputs = self.model(**batch)
+                loss = outputs.loss
+                avg_loss.update(loss, n=batch["input_ids"].shape[0])
+            losses.append(avg_loss.avg)
+        return losses
+
     @torch.no_grad()
     def predict_glue_acc(self, configs):
         target_metric = target_dev_metric(self.task_name)
