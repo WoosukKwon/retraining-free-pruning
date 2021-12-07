@@ -212,7 +212,7 @@ def main():
         baseline_acc = acc_predictor.predict_acc([full_network_config])[0]
         logger.info(f"Full network acc on samples: {baseline_acc:.4f}")
 
-    if args.search_algo == "lp":
+    if args.search_algo == "ilp":
         sample_dataloader = DataLoader(
             sample_dataset,
             sampler=sample_sampler,
@@ -233,7 +233,7 @@ def main():
         finder = RandomFinder(config, acc_predictor, mac_predictor, logger, ranked=args.ranked)
     elif args.search_algo == "mcmc":
         finder = MCMCFinder(config, acc_predictor, mac_predictor, logger, ranked=args.ranked)
-    elif args.search_algo == "lp":
+    elif args.search_algo == "ilp":
         finder = ILPFinder(
             config,
             acc_predictor,
