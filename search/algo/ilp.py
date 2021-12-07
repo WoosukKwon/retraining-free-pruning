@@ -2,7 +2,7 @@ from tqdm import tqdm
 import torch
 
 
-class LPFinder:
+class ILPFinder:
 
     def __init__(
         self,

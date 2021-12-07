@@ -16,7 +16,7 @@ from tools.importance import importance_by_gradient
 from search.algo.random import RandomFinder
 from search.algo.evolution import EvolutionFinder
 from search.algo.mcmc import MCMCFinder
-from search.algo.lp import LPFinder
+from search.algo.ilp import ILPFinder
 from search.predictor.accuracy import SampleAccuracyPredictor
 from search.predictor.efficiency import MACPredictor
 
@@ -47,7 +47,7 @@ parser.add_argument("--search_algo", required=True, choices=[
     "random",
     "evolution",
     "mcmc",
-    "lp",
+    "ilp",
 ])
 parser.add_argument("--ranked", action="store_true")
 parser.add_argument("--num_iter", type=int, default=100)
@@ -234,7 +234,7 @@ def main():
     elif args.search_algo == "mcmc":
         finder = MCMCFinder(config, acc_predictor, mac_predictor, logger, ranked=args.ranked)
     elif args.search_algo == "lp":
-        finder = LPFinder(
+        finder = ILPFinder(
             config,
             acc_predictor,
             mac_predictor,
