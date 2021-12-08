@@ -30,7 +30,7 @@ class ILPFinder:
         sorted_head_importance, sorted_head_indicies = head_importance.sort(descending=True)
         sorted_filter_importance, sorted_filter_indicies = filter_importance.sort(descending=True)
 
-        best_result = 12345678 if self.use_loss else 0
+        best_result = 0
         best_mac = 0
         best_config = None
         num_total_heads = self.config.num_attention_heads * self.config.num_hidden_layers
@@ -66,21 +66,10 @@ class ILPFinder:
             if mac_ratio > mac_threshold:
                 self.logger.info(f"MAC: {mac_ratio:.4f} BUG: the configuration must not exceed the threshold")
 
-            if self.use_loss:
-                loss = self.acc_predictor.predict_loss([config])[0]
-                self.logger.info(f"Loss: {loss:.4f}")
-                if loss < best_result and mac_ratio <= mac_threshold:
-                    best_result = loss
-                    best_mac = mac_ratio
-                    best_config = config
-                self.logger.info(f"Best Loss: {best_result} MAC: {best_mac}")
-            else:
-                acc = self.acc_predictor.predict_acc([config])[0]
-                self.logger.info(f"Acc: {acc:.4f}")
-                if acc > best_result and mac_ratio <= mac_threshold:
-                    best_result = acc
-                    best_mac = mac_ratio
-                    best_config = config
-                self.logger.info(f"Best Acc: {best_result} MAC: {best_mac}")
+            if total_importance > best_result:
+                best_result = total_importance
+                best_mac = mac_ratio
+                best_config = config
+            self.logger.info(f"Best Score: {best_result} MAC: {best_mac}")
 
         return best_config
