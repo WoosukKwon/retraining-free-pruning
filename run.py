@@ -224,7 +224,6 @@ def main():
             model,
             config,
             sample_dataloader,
-            absolute=True,
         )
 
     if args.search_algo == "evolution":
