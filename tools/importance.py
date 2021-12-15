@@ -2,34 +2,19 @@ import torch
 from tqdm import tqdm
 
 
-def importance_by_gradient(model, config, dataloader, absolute=True):
+def importance_by_gradient(model, config, dataloader, postprocess=lambda x: x * x):
     num_hidden_layers = config.num_hidden_layers
     num_attention_heads = config.num_attention_heads
     num_filter_groups = config.num_filter_groups
 
-    head_mask = torch.ones(num_hidden_layers, num_attention_heads).cuda() # FIXME
+    head_mask = torch.ones(num_hidden_layers, num_attention_heads).cuda()
     head_mask.requires_grad_(True)
-    head_importance = torch.zeros(num_hidden_layers, num_attention_heads).cuda() # FIXME
-
-    intermediate_weight = []
-    intermediate_bias = []
-    output_weight = []
-    for name, w in model.named_parameters():
-        if "intermediate" in name:
-            if w.dim() > 1:
-                intermediate_weight.append(w)
-            else:
-                intermediate_bias.append(w)
-
-        if "output" in name and "attention" not in name:
-            if w.dim() > 1:
-                output_weight.append(w)
-
-    neuron_importance = []
-    for w in intermediate_weight:
-        neuron_importance.append(torch.zeros(w.shape[0]).to(w.device))
+    head_importance = torch.zeros(num_hidden_layers, num_attention_heads).cuda()
 
     filter_mask = torch.ones(num_hidden_layers, num_filter_groups).cuda()
+    filter_mask.requires_grad_(True)
+    filter_importance = torch.zeros(num_hidden_layers, num_filter_groups).cuda()
+
     model.eval()
     for batch in tqdm(dataloader):
         batch["head_masks"] = head_mask
@@ -41,25 +26,15 @@ def importance_by_gradient(model, config, dataloader, absolute=True):
         loss = outputs.loss
         loss.backward()
 
-        head_importance += head_mask.grad.abs().detach() if absolute else head_mask.grad.detach()
+        head_grad = head_mask.grad.detach()
         head_mask.grad = None
-        for w1, b1, w2, importance in zip(
-            intermediate_weight,
-            intermediate_bias,
-            output_weight,
-            neuron_importance
-        ):
-            w1_importance = ((w1 * w1.grad).sum(dim=1) + b1 * b1.grad).detach()
-            w2_importance = ((w2 * w2.grad).sum(dim=0)).detach()
-            if absolute:
-                w1_importance = w1_importance.abs()
-                w2_importance = w2_importance.abs()
-            importance += w1_importance + w2_importance
-            w1.grad = None
-            b1.grad = None
-            w2.grad = None
+        head_importance += postprocess(head_grad)
 
-    return head_importance, neuron_importance
+        filter_grad = filter_mask.grad.detach()
+        filter_mask.grad = None
+        filter_importance += postprocess(filter_grad)
+
+    return head_importance, filter_importance
 
 
 def importance_by_magnitude(model, config):
