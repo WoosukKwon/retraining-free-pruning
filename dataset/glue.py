@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import DataLoader
-from transformers import default_data_collator
 from datasets import load_dataset
+from transformers import default_data_collator
 from transformers.data.data_collator import DataCollatorWithPadding
 
 
@@ -51,6 +51,21 @@ def max_seq_length(task_name):
     return TASK_TO_SEQ_LEN[task_name]
 
 
+def avg_seq_length(task_name):
+    # Dev set
+    TASK_TO_SEQ_LEN = {
+        "stsb": 31.47,
+        "mrpc": 53.24,
+        "rte": 64.59,
+        "sst2": 25.16,
+        "qqp": 30.55,
+        "qnli": 50.97,
+        "cola": 11.67,
+        "mnli": 39.05,
+    }
+    return TASK_TO_SEQ_LEN[task_name]
+
+
 def target_dev_metric(task_name):
     TASK_TO_DEV_METRIC = {
         "stsb": "spearmanr",
@@ -66,7 +81,7 @@ def target_dev_metric(task_name):
     }
     return TASK_TO_DEV_METRIC[task_name]
 
-    
+
 def preprocess_glue(examples, tokenizer, sentence_keys, max_seq_len, pad_to_max, label_key="label"):
     sentence1_key, sentence2_key = sentence_keys
     if sentence2_key is None:
