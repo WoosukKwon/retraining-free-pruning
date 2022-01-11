@@ -7,29 +7,29 @@ from transformers.modeling_outputs import (
     QuestionAnsweringModelOutput,
 )
 
-from models.bert.config import BertConfig
-from models.bert.embedding import BertEmbeddings
+from models.roberta.config import RobertaConfig
+from models.roberta.embedding import RobertaEmbeddings
 from models.common.encoder import BertEncoder
 from models.common.pooler import BertPooler
 
 
-class BertPreTrainedModel(PreTrainedModel):
+class RobertaPreTrainedModel(PreTrainedModel):
 
-    config_class = BertConfig
-    base_model_prefix = "bert"
+    config_class = RobertaConfig
+    base_model_prefix = "roberta"
 
     def _init_weights(self, module):
         return
 
 
-class BertModel(BertPreTrainedModel):
+class RobertaModel(RobertaPreTrainedModel):
     
     _keys_to_ignore_on_load_missing = [r"position_ids"]
 
     def __init__(self, config, add_pooling_layer=True):
         super().__init__(config)
         self.config = config
-        self.embeddings = BertEmbeddings(config)
+        self.embeddings = RobertaEmbeddings(config)
         self.encoder = BertEncoder(config)
         self.pooler = BertPooler(config) if add_pooling_layer else None
 
@@ -70,7 +70,7 @@ class BertModel(BertPreTrainedModel):
         )
 
 
-class BertForSequenceClassification(BertPreTrainedModel):
+class RobertaForSequenceClassification(RobertaPreTrainedModel):
 
     _keys_to_ignore_on_load_missing = [r"position_ids"]
 
@@ -79,7 +79,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
         self.num_labels = config.num_labels
         self.problem_type = config.problem_type
 
-        self.bert = BertModel(config)
+        self.roberta = RobertaModel(config)
         self.dropout = nn.Dropout(
             config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
         )
@@ -97,7 +97,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
         temp=None,
         labels=None,
     ):
-        outputs = self.bert(
+        outputs = self.roberta(
             input_ids,
             attention_mask,
             token_type_ids=token_type_ids,
@@ -129,7 +129,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
         )
 
 
-class BertForQuestionAnswering(BertPreTrainedModel):
+class RobertaForQuestionAnswering(RobertaPreTrainedModel):
 
     _keys_to_ignore_on_load_unexpected = [r"pooler"]
 
@@ -137,7 +137,7 @@ class BertForQuestionAnswering(BertPreTrainedModel):
         super().__init__(config)
         self.num_labels = config.num_labels
 
-        self.bert = BertModel(config, add_pooling_layer=False)
+        self.roberta = RobertaModel(config, add_pooling_layer=False)
         self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)
 
         self.init_weights()
@@ -153,7 +153,7 @@ class BertForQuestionAnswering(BertPreTrainedModel):
         start_positions=None,
         end_positions=None,
     ):
-        outputs = self.bert(
+        outputs = self.roberta(
             input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,

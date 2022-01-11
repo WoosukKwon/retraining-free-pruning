@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 from transformers.modeling_outputs import BaseModelOutput
 
-from models.bert.attention import BertAttention
+from models.common.attention import BertAttention
+from models.common.ffn import BertIntermediate, BertOutput
 from models.common.token_pruner import TokenPruner
-from models.bert.ffn import BertIntermediate, BertOutput
 
 
 class BertLayer(nn.Module):

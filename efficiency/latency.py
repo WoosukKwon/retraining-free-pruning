@@ -1,8 +1,9 @@
 import numpy as np
 
 
-def approximate_piecewise_linear(lut):
-    best = {"error": 12345678}
+def fit_piecewise_linear(lut):
+    best = {"error": 100}
+
     for threshold in range(1, len(lut) + 1):
         c = lut[:threshold].sum() / threshold
         x_i = lut[threshold:] - c
@@ -17,6 +18,7 @@ def approximate_piecewise_linear(lut):
         for i in range(1, len(lut) - threshold + 1):
             approximated.append(slope * i + c)
         approximated = np.asarray(approximated)
+
         squared_error = ((lut - approximated) * (lut - approximated)).sum()
         if squared_error < best["error"]:
             best["error"] = squared_error
@@ -24,4 +26,5 @@ def approximate_piecewise_linear(lut):
             best["c"] = c
             best["slope"] = slope
             best["approximated"] = approximated
+
     return best

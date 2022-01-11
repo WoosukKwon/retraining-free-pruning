@@ -1,9 +1,9 @@
 from transformers import PretrainedConfig
 
 
-class BertConfig(PretrainedConfig):
+class RobertaConfig(PretrainedConfig):
 
-    model_type = "bert"
+    model_type = "roberta"
 
     def __init__(
         self,

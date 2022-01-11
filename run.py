@@ -9,13 +9,13 @@ from transformers import AutoTokenizer, set_seed, DataCollatorWithPadding
 
 from models.bert.config import BertConfig
 from models.bert.model import BertForQuestionAnswering, BertForSequenceClassification
+from models.roberta.config import RobertaConfig
+from models.roberta.model import RobertaForSequenceClassification, RobertaForQuestionAnswering
 from tools.glue import glue_dataloader, max_seq_length, glue_dataset
 from tools.squad import squad_dataset
 from tools.partition import partition_dataset
 from tools.importance import importance_by_gradient
-from search.algo.random import RandomFinder
-from search.algo.evolution import EvolutionFinder
-from search.algo.mcmc import MCMCFinder
+from tools.merging import neuron_merging
 from search.algo.ilp import ILPFinder
 from search.predictor.accuracy import SampleAccuracyPredictor
 from search.predictor.efficiency import MACPredictor
@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 
 MODELS = {
     "bert-base-uncased": (BertConfig, BertForSequenceClassification, BertForQuestionAnswering),
+    "bert-large-uncased": (BertConfig, BertForSequenceClassification, BertForQuestionAnswering),
+    "roberta-base": (RobertaConfig, RobertaForSequenceClassification, RobertaForQuestionAnswering),
 }
 
 parser = argparse.ArgumentParser()
@@ -77,16 +79,11 @@ def main():
         args.tokenizer = args.model_name
     if args.log_dir is None:
         args.log_dir = os.path.join(
-            "logs",
+            "tmp2",
             args.model_name,
             args.task_name,
-            args.search_algo,
-            f"mac_{args.mac_threshold}",
             args.dataset,
-            f"sample_{args.sample_ratio}",
-            "ranked" if args.ranked else "unranked",
-            f"num_iter_{args.num_iter}",
-            f"seed_{args.seed}",
+            f"mac_{args.mac_threshold}",
         )
     os.makedirs(args.log_dir, exist_ok=True)
 
@@ -212,27 +209,26 @@ def main():
         baseline_acc = acc_predictor.predict_acc([full_network_config])[0]
         logger.info(f"Full network acc on samples: {baseline_acc:.4f}")
 
-    if args.search_algo == "ilp":
-        sample_dataloader = DataLoader(
-            sample_dataset,
-            sampler=sample_sampler,
-            batch_size=12 if is_squad else 32,
-            collate_fn=collate_fn,
-            pin_memory=True,
-        )
-        head_importance, filter_importance = importance_by_gradient(
+    sample_dataloader = DataLoader(
+        sample_dataset,
+        sampler=sample_sampler,
+        batch_size=12 if is_squad else 32,
+        collate_fn=collate_fn,
+        pin_memory=True,
+    )
+
+    mac_thresholds = [0.7, 0.5]
+    head_masks = torch.ones(12, 12).cuda()
+    filter_masks = torch.ones(12, 3072).cuda()
+    for i in range(len(mac_thresholds)):
+        head_importance, filter_importance, head_grad, filter_grad = importance_by_gradient(
             model,
             config,
             sample_dataloader,
+            head_masks,
+            filter_masks,
         )
 
-    if args.search_algo == "evolution":
-        finder = EvolutionFinder(config, acc_predictor, mac_predictor, logger, ranked=args.ranked)
-    elif args.search_algo == "random":
-        finder = RandomFinder(config, acc_predictor, mac_predictor, logger, ranked=args.ranked)
-    elif args.search_algo == "mcmc":
-        finder = MCMCFinder(config, acc_predictor, mac_predictor, logger, ranked=args.ranked)
-    elif args.search_algo == "ilp":
         finder = ILPFinder(
             config,
             acc_predictor,
@@ -240,15 +236,20 @@ def main():
             logger,
             head_importance,
             filter_importance,
+            head_grad,
+            filter_grad,
             use_loss=is_squad,
+            rearrange=True,
         )
+        best_config = finder.search(args.num_iter, mac_thresholds[i])
+        mac_ratio = mac_predictor.get_efficiency(best_config)
+        logger.info(f"Best config MAC: {mac_ratio * 100.0:.2f} %")
+        head_masks = best_config["head_masks"]
+        filter_masks = best_config["filter_masks"]
+        torch.save(head_masks, os.path.join(args.log_dir, f"head_masks_{mac_thresholds[i]}.pt"))
+        torch.save(filter_masks, os.path.join(args.log_dir, f"filter_masks_{mac_thresholds[i]}.pt"))
 
-    best_config = finder.search(args.num_iter, args.mac_threshold)
-    mac_ratio = mac_predictor.get_efficiency(best_config)
-    logger.info(f"Best config MAC: {mac_ratio * 100.0:.2f} %")
-
-    head_masks = best_config["head_masks"]
-    filter_masks = best_config["filter_masks"]
+    # neuron_merging(model, filter_masks, 0.0001)
     torch.save(head_masks, os.path.join(args.log_dir, "head_masks.pt"))
     torch.save(filter_masks, os.path.join(args.log_dir, "filter_masks.pt"))
 
@@ -269,7 +270,7 @@ def main():
             metric,
         )
     test_acc = test_acc_predictor.predict_acc([best_config])[0]
-    logger.info(f"Test accuracy: {test_acc:.4f}")
+    logger.info(f"{args.task_name} Test accuracy: {test_acc:.4f}")
 
 
 if __name__ == "__main__":
