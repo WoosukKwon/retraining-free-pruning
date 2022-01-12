@@ -38,16 +38,16 @@ parser.add_argument("--task_name", type=str, required=True, choices=[
 ])
 parser.add_argument("--ckpt_dir", type=str, required=True)
 parser.add_argument("--output_dir", type=str, default=None)
-parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--gpu", type=int, default=0)
 
-parser.add_argument("--num_samples", type=int, default=2048)
 parser.add_argument("--metric", type=str, choices=[
     "mac",
 ], default="mac")
 parser.add_argument("--constraint", type=float, default=0.5,
     help="MAC/latency constraint relative to the origin model",
 )
+parser.add_argument("--num_samples", type=int, default=2048)
+parser.add_argument("--seed", type=int, default=0)
 
 
 def main():
@@ -142,6 +142,7 @@ def main():
     test_acc = test_accuracy(model, head_mask, neuron_mask, tokenizer, args.task_name)
     logger.info(f"{args.task_name} Test accuracy: {test_acc:.4f}")
 
+    # Save the masks
     torch.save(head_mask, os.path.join(args.output_dir, "head_mask.pt"))
     torch.save(neuron_mask, os.path.join(args.output_dir, "neuron_mask.pt"))
 
