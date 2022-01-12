@@ -1,7 +1,8 @@
 from tqdm import tqdm
-import cupy
-from cupyx.scipy.sparse.linalg import gmres
 import torch
+
+from utils.linalg import closed_form_solver, gmres_cupy_solver
+
 
 from utils.arch import (
     get_encoder,
@@ -12,7 +13,6 @@ from utils.arch import (
     MaskNeurons,
     remove_padding,
 )
-from utils.timer import CPUTimer
 
 
 @torch.no_grad()
@@ -129,8 +129,6 @@ def get_ffn_lstsq(
     student_neuron_mask,
     layer_idx,
 ):
-    intermediate_size = config.intermediate_size
-
     layer = get_layers(model)[layer_idx]
     ffn2 = get_ffn2(model, layer_idx)
     weights_per_neuron = ffn2.dense.weight.t().unsqueeze(1)                 # shape: [intermediate, 1, hidden_size]
@@ -224,15 +222,9 @@ def rescale(
         )
         # For MHA, try to use the closed form solution as the matrix is small
         try:
-            # NOTE: for safety, compute matrix inverse on CPU
-            inv_ATA = torch.inverse(ATA.cpu())
-            scale_factor = inv_ATA.cuda() @ ATB
+            scale_factor = closed_form_solver(ATA, ATB)
         except RuntimeError:
-            CU_ATA = cupy.asarray(ATA.cpu().numpy())
-            CU_ATB = cupy.asarray(ATB.cpu().numpy())
-            solution = gmres(CU_ATA, CU_ATB)
-            scale_factor = cupy.asnumpy(solution[0])
-            scale_factor = torch.from_numpy(scale_factor).cuda()
+            scale_factor = gmres_cupy_solver(ATA, ATB)
         rescaled_head_mask[layer_idx] *= scale_factor
 
         ATA, ATB = get_ffn_lstsq(
@@ -246,12 +238,7 @@ def rescale(
             layer_idx,
         )
         # For FFN, use the GMRES solution for numerical stability
-        CU_ATA = cupy.asarray(ATA.cpu().numpy())
-        CU_ATB = cupy.asarray(ATB.cpu().numpy())
-        solution = gmres(CU_ATA, CU_ATB)
-        scale_factor = cupy.asnumpy(solution[0])
-        scale_factor = torch.from_numpy(scale_factor).cuda()
-
+        scale_factor = gmres_cupy_solver(ATA, ATB)
         nonzero_neurons = rescaled_neuron_mask[layer_idx].nonzero().squeeze()
         for index, scale in zip(nonzero_neurons, scale_factor):
             rescaled_neuron_mask[layer_idx][index] *= scale
