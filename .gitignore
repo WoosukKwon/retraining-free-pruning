@@ -1,8 +1,2 @@
 __pycache__
-checkpoints
-logs
-plots
-lut
-*.pt
-*.png
 outputs
