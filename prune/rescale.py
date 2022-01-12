@@ -1,6 +1,7 @@
-import torch
+from tqdm import tqdm
 import cupy
 from cupyx.scipy.sparse.linalg import gmres
+import torch
 
 from utils.arch import (
     get_encoder,
@@ -11,28 +12,28 @@ from utils.arch import (
     MaskNeurons,
     remove_padding,
 )
+from utils.timer import CPUTimer
 
 
+@torch.no_grad()
 def collect_layer_inputs(
     model,
     head_mask,
     neuron_mask,
     layer_idx,
-    dataloader=None,
-    prev_inputs=None,
+    prev_inputs,
 ):
     layers = get_layers(model)
     target_layer = layers[layer_idx]
 
     inputs = []
     if layer_idx == 0:
-        assert dataloader is not None
         encoder = get_encoder(model)
         layers = encoder.layer
         encoder.layers = layers[:1]
 
         handle = hijack_input(target_layer, inputs)
-        for batch in dataloader:
+        for batch in prev_inputs:
             for k, v in batch.items():
                 batch[k] = v.to("cuda")
             with MaskNeurons(model, neuron_mask):
@@ -40,17 +41,17 @@ def collect_layer_inputs(
 
         handle.remove()
         encoder.layers = layers
+        inputs = [list(x) for x in inputs]
     else:
-        assert prev_inputs is not None
         prev_layer = layers[layer_idx - 1]
 
         for batch in prev_inputs:
-            batch[2] = head_mask[layer_idx - 1]
+            batch[2] = head_mask[layer_idx - 1].view(1, -1, 1, 1)
             with MaskNeurons(model, neuron_mask):
                 prev_output = prev_layer(*batch)
 
             batch[0] = prev_output[0]
-            batch[2] = head_mask[layer_idx]
+            batch[2] = head_mask[layer_idx].view(1, -1, 1, 1)
             inputs.append(batch)
 
     return inputs
@@ -60,17 +61,18 @@ def collect_layer_inputs(
 def get_mha_lstsq(
     model,
     config,
-    teacher_head_mask,
+    teacher_inputs,
     teacher_neuron_mask,
+    student_inputs,
     student_head_mask,
     student_neuron_mask,
     layer_idx,
-    dataloader,
 ):
     num_attention_heads = config.num_attention_heads
     hidden_size = config.hidden_size
     attention_head_size = int(hidden_size / num_attention_heads)
 
+    layer = get_layers(model)[layer_idx]
     mha_proj = get_mha_proj(model, layer_idx)
     weights_per_head = mha_proj.dense.weight.t().view(num_attention_heads, -1, hidden_size)
 
@@ -80,26 +82,21 @@ def get_mha_lstsq(
     ATA = torch.zeros(num_attention_heads, num_attention_heads).cuda()
     ATB = torch.zeros(num_attention_heads).cuda()
 
-    encoder = get_encoder(model)
-    layers = encoder.layer
-    encoder.layers = layers[:layer_idx + 1]
-
     model.eval()
-    for batch in dataloader:
-        for k, v in batch.items():
-            batch[k] = v.to("cuda")
-        attention_mask = batch["attention_mask"]
+    for teacher_batch, student_batch in zip(teacher_inputs, student_inputs):
+        attention_mask = (teacher_batch[1] == 0)
+        student_batch[2] = student_head_mask[layer_idx].view(1, -1, 1, 1)
 
         # Get the outputs of the teacher model
         with MaskNeurons(model, teacher_neuron_mask):
-            model(head_mask=teacher_head_mask, **batch)
+            layer(*teacher_batch)
         hidden_states, input_tensor = inputs.pop(0)
         teacher_output = mha_proj.dense(hidden_states) + input_tensor       # shape: [batch, seq_len, hidden_size]
         teacher_output = remove_padding(teacher_output, attention_mask)     # shape: [#tokens, hidden_size]
 
         # Get the outputs of the student model
         with MaskNeurons(model, student_neuron_mask):
-            model(head_mask=student_head_mask, **batch)
+            layer(*student_batch)
         hidden_states, input_tensor = inputs.pop(0)
         hidden_states = remove_padding(hidden_states, attention_mask)
         input_tensor = remove_padding(input_tensor, attention_mask)
@@ -118,7 +115,6 @@ def get_mha_lstsq(
         ATB += A.t() @ B
 
     handle.remove()
-    encoder.layers = layers
     return ATA, ATB
 
 
@@ -126,52 +122,53 @@ def get_mha_lstsq(
 def get_ffn_lstsq(
     model,
     config,
-    teacher_head_mask,
+    teacher_inputs,
     teacher_neuron_mask,
+    student_inputs,
     student_head_mask,
     student_neuron_mask,
     layer_idx,
-    dataloader,
 ):
     intermediate_size = config.intermediate_size
 
+    layer = get_layers(model)[layer_idx]
     ffn2 = get_ffn2(model, layer_idx)
     weights_per_neuron = ffn2.dense.weight.t().unsqueeze(1)                 # shape: [intermediate, 1, hidden_size]
+
+    nonzero_neurons = student_neuron_mask[layer_idx].nonzero().squeeze()
+    num_neurons = nonzero_neurons.shape[0]
+    weights_per_neuron = weights_per_neuron.index_select(dim=0, index=nonzero_neurons)
 
     inputs = []
     handle = hijack_input(ffn2, inputs)
 
-    ATA = torch.zeros(intermediate_size, intermediate_size).cuda()
-    ATB = torch.zeros(intermediate_size).cuda()
-
-    encoder = get_encoder(model)
-    layers = encoder.layer
-    encoder.layers = layers[:layer_idx + 1]
+    ATA = torch.zeros(num_neurons, num_neurons).cuda()
+    ATB = torch.zeros(num_neurons).cuda()
 
     model.eval()
-    for batch in dataloader:
-        for k, v in batch.items():
-            batch[k] = v.to("cuda")
-        attention_mask = batch["attention_mask"]
+    for teacher_batch, student_batch in zip(teacher_inputs, student_inputs):
+        attention_mask = (teacher_batch[1] == 0)
+        student_batch[2] = student_head_mask[layer_idx].view(1, -1, 1, 1)
 
         # Get the outputs of the teacher model
         with MaskNeurons(model, teacher_neuron_mask):
-            model(head_mask=teacher_head_mask, **batch)
+            layer(*teacher_batch)
         hidden_states, input_tensor = inputs.pop(0)
         teacher_output = ffn2.dense(hidden_states) + input_tensor           # shape: [batch, seq_len, hidden_size]
         teacher_output = remove_padding(teacher_output, attention_mask)     # shape: [#tokens, hidden_size]
 
         # Get the outputs of the student model
         with MaskNeurons(model, student_neuron_mask):
-            model(head_mask=student_head_mask, **batch)
+            layer(*student_batch)
         hidden_states, input_tensor = inputs.pop(0)
         hidden_states = remove_padding(hidden_states, attention_mask)
         input_tensor = remove_padding(input_tensor, attention_mask)
 
         hidden_states = hidden_states.t().unsqueeze(2)                      # shape: [intermediate, #tokens, 1]
+        hidden_states = hidden_states.index_select(dim=0, index=nonzero_neurons)
 
         outputs_per_neuron = hidden_states @ weights_per_neuron             # shape: [intermediate, #tokens, hidden_size]
-        outputs_per_neuron = outputs_per_neuron.view(intermediate_size, -1) # shape: [intermediate, #tokens * hidden_size]
+        outputs_per_neuron = outputs_per_neuron.view(num_neurons, -1)       # shape: [intermediate, #tokens * hidden_size]
 
         A = outputs_per_neuron.t()
         B = teacher_output - ffn2.dense.bias - input_tensor
@@ -181,7 +178,6 @@ def get_ffn_lstsq(
         ATB += A.t() @ B
 
     handle.remove()
-    encoder.layers = layers
     return ATA, ATB
 
 
@@ -197,34 +193,57 @@ def rescale(
 ):
     num_hidden_layers = config.num_hidden_layers
 
-    rescaled_head_mask = torch.zeros_like(student_head_mask)
-    rescaled_neuron_mask = torch.zeros_like(student_neuron_mask)
+    rescaled_head_mask = student_head_mask.clone()
+    rescaled_neuron_mask = student_neuron_mask.clone()
 
-    for layer_idx in range(num_hidden_layers):
+    for layer_idx in tqdm(range(num_hidden_layers)):
+        teacher_inputs = collect_layer_inputs(
+            model,
+            teacher_head_mask,
+            teacher_neuron_mask,
+            layer_idx,
+            prev_inputs=dataloader if layer_idx == 0 else teacher_inputs,
+        )
+        student_inputs = collect_layer_inputs(
+            model,
+            rescaled_head_mask,
+            rescaled_neuron_mask,
+            layer_idx,
+            prev_inputs=dataloader if layer_idx == 0 else student_inputs,
+        )
+
         ATA, ATB = get_mha_lstsq(
             model,
             config,
-            teacher_head_mask,
+            teacher_inputs,
             teacher_neuron_mask,
-            student_head_mask,
-            student_neuron_mask,
+            student_inputs,
+            rescaled_head_mask,
+            rescaled_neuron_mask,
             layer_idx,
-            dataloader,
         )
-        # For MHA, use the closed form solution as the matrix is small
-        scale_factor = torch.inverse(ATA) @ ATB
-        print(scale_factor)
-        rescaled_head_mask[layer_idx] = scale_factor * student_head_mask[layer_idx]
+        # For MHA, try to use the closed form solution as the matrix is small
+        try:
+            # NOTE: for safety, compute matrix inverse on CPU
+            inv_ATA = torch.inverse(ATA.cpu())
+            scale_factor = inv_ATA.cuda() @ ATB
+        except RuntimeError:
+            CU_ATA = cupy.asarray(ATA.cpu().numpy())
+            CU_ATB = cupy.asarray(ATB.cpu().numpy())
+            solution = gmres(CU_ATA, CU_ATB)
+            scale_factor = cupy.asnumpy(solution[0])
+            scale_factor = torch.from_numpy(scale_factor).cuda()
+        rescaled_head_mask[layer_idx] *= scale_factor
 
         ATA, ATB = get_ffn_lstsq(
             model,
             config,
-            teacher_head_mask,
+            teacher_inputs,
             teacher_neuron_mask,
-            student_head_mask,
-            student_neuron_mask,
+            student_inputs,
+            rescaled_head_mask,
+            rescaled_neuron_mask,
             layer_idx,
-            dataloader,
         )
         # For FFN, use the GMRES solution for numerical stability
         CU_ATA = cupy.asarray(ATA.cpu().numpy())
@@ -232,6 +251,9 @@ def rescale(
         solution = gmres(CU_ATA, CU_ATB)
         scale_factor = cupy.asnumpy(solution[0])
         scale_factor = torch.from_numpy(scale_factor).cuda()
-        rescaled_neuron_mask = scale_factor * student_neuron_mask[layer_idx]
+
+        nonzero_neurons = rescaled_neuron_mask[layer_idx].nonzero().squeeze()
+        for index, scale in zip(nonzero_neurons, scale_factor):
+            rescaled_neuron_mask[layer_idx][index] *= scale
 
     return rescaled_head_mask, rescaled_neuron_mask
