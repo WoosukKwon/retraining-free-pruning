@@ -122,6 +122,7 @@ def main():
         sample_dataset,
         batch_size=sample_batch_size,
         collate_fn=collate_fn,
+        shuffle=False,
         pin_memory=True,
     )
 
