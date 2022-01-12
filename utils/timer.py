@@ -12,7 +12,7 @@ class CPUTimer:
 
     def __exit__(self, type, value, traceback):
         end = time.time()
-        self.timelogs.append((end - self.start) / 1000) # ms
+        self.timelogs.append((end - self.start) * 1000) # ms
 
 
 class GPUTimer:
