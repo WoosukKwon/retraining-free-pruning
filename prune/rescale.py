@@ -131,11 +131,12 @@ def get_ffn_lstsq(
 ):
     layer = get_layers(model)[layer_idx]
     ffn2 = get_ffn2(model, layer_idx)
-    weights_per_neuron = ffn2.dense.weight.t().unsqueeze(1)                 # shape: [intermediate, 1, hidden_size]
+    weights_per_neuron = ffn2.dense.weight.t()
 
     nonzero_neurons = student_neuron_mask[layer_idx].nonzero().squeeze()
     num_neurons = nonzero_neurons.shape[0]
     weights_per_neuron = weights_per_neuron.index_select(dim=0, index=nonzero_neurons)
+    W = weights_per_neuron @ weights_per_neuron.t()
 
     inputs = []
     handle = hijack_input(ffn2, inputs)
@@ -152,8 +153,8 @@ def get_ffn_lstsq(
         with MaskNeurons(model, teacher_neuron_mask):
             layer(*teacher_batch)
         hidden_states, input_tensor = inputs.pop(0)
-        teacher_output = ffn2.dense(hidden_states) + input_tensor           # shape: [batch, seq_len, hidden_size]
-        teacher_output = remove_padding(teacher_output, attention_mask)     # shape: [#tokens, hidden_size]
+        teacher_output = ffn2.dense(hidden_states) + input_tensor
+        teacher_output = remove_padding(teacher_output, attention_mask)
 
         # Get the outputs of the student model
         with MaskNeurons(model, student_neuron_mask):
@@ -162,18 +163,13 @@ def get_ffn_lstsq(
         hidden_states = remove_padding(hidden_states, attention_mask)
         input_tensor = remove_padding(input_tensor, attention_mask)
 
-        hidden_states = hidden_states.t().unsqueeze(2)                      # shape: [intermediate, #tokens, 1]
+        hidden_states = hidden_states.t()
         hidden_states = hidden_states.index_select(dim=0, index=nonzero_neurons)
 
-        outputs_per_neuron = hidden_states @ weights_per_neuron             # shape: [intermediate, #tokens, hidden_size]
-        outputs_per_neuron = outputs_per_neuron.view(num_neurons, -1)       # shape: [intermediate, #tokens * hidden_size]
+        ATA += W * (hidden_states @ hidden_states.t())
 
-        A = outputs_per_neuron.t()
         B = teacher_output - ffn2.dense.bias - input_tensor
-        B = B.flatten()
-
-        ATA += A.t() @ A
-        ATB += A.t() @ B
+        ATB += (hidden_states.unsqueeze(1) @ (weights_per_neuron @ B.t()).unsqueeze(2)).squeeze()
 
     handle.remove()
     return ATA, ATB
