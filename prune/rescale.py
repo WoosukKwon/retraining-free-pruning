@@ -72,15 +72,19 @@ def get_mha_lstsq(
     hidden_size = config.hidden_size
     attention_head_size = int(hidden_size / num_attention_heads)
 
+    nonzero_heads = student_head_mask[layer_idx].nonzero().flatten()
+    num_nonzero_heads = nonzero_heads.shape[0]
+
     layer = get_layers(model)[layer_idx]
     mha_proj = get_mha_proj(model, layer_idx)
     weights_per_head = mha_proj.dense.weight.t().view(num_attention_heads, -1, hidden_size)
+    weights_per_head = weights_per_head.index_select(dim=0, index=nonzero_heads)
 
     inputs = []
     handle = hijack_input(mha_proj, inputs)
 
-    ATA = torch.zeros(num_attention_heads, num_attention_heads).cuda()
-    ATB = torch.zeros(num_attention_heads).cuda()
+    ATA = torch.zeros(num_nonzero_heads, num_nonzero_heads).cuda()
+    ATB = torch.zeros(num_nonzero_heads).cuda()
 
     model.eval()
     for teacher_batch, student_batch in zip(teacher_inputs, student_inputs):
@@ -91,8 +95,8 @@ def get_mha_lstsq(
         with MaskNeurons(model, teacher_neuron_mask):
             layer(*teacher_batch)
         hidden_states, input_tensor = inputs.pop(0)
-        teacher_output = mha_proj.dense(hidden_states) + input_tensor       # shape: [batch, seq_len, hidden_size]
-        teacher_output = remove_padding(teacher_output, attention_mask)     # shape: [#tokens, hidden_size]
+        teacher_output = mha_proj.dense(hidden_states) + input_tensor
+        teacher_output = remove_padding(teacher_output, attention_mask)
 
         # Get the outputs of the student model
         with MaskNeurons(model, student_neuron_mask):
@@ -103,9 +107,10 @@ def get_mha_lstsq(
 
         hidden_states = hidden_states.view(-1, num_attention_heads, attention_head_size)
         hidden_states = hidden_states.permute(1, 0, 2)
+        hidden_states = hidden_states.index_select(dim=0, index=nonzero_heads)
 
-        outputs_per_head = hidden_states @ weights_per_head                 # shape: [#heads, #tokens, hidden_size]
-        outputs_per_head = outputs_per_head.view(num_attention_heads, -1)   # shape: [#heads, #tokens * hidden_size]
+        outputs_per_head = hidden_states @ weights_per_head
+        outputs_per_head = outputs_per_head.view(num_nonzero_heads, -1)
 
         A = outputs_per_head.t()
         B = teacher_output - mha_proj.dense.bias - input_tensor
@@ -133,7 +138,7 @@ def get_ffn_lstsq(
     ffn2 = get_ffn2(model, layer_idx)
     weights_per_neuron = ffn2.dense.weight.t()
 
-    nonzero_neurons = student_neuron_mask[layer_idx].nonzero().squeeze()
+    nonzero_neurons = student_neuron_mask[layer_idx].nonzero().flatten()
     num_neurons = nonzero_neurons.shape[0]
     weights_per_neuron = weights_per_neuron.index_select(dim=0, index=nonzero_neurons)
     W = weights_per_neuron @ weights_per_neuron.t()
@@ -186,7 +191,6 @@ def rescale(
     dataloader,
 ):
     num_hidden_layers = config.num_hidden_layers
-
     rescaled_head_mask = student_head_mask.clone()
     rescaled_neuron_mask = student_neuron_mask.clone()
 
@@ -206,37 +210,41 @@ def rescale(
             prev_inputs=dataloader if layer_idx == 0 else student_inputs,
         )
 
-        ATA, ATB = get_mha_lstsq(
-            model,
-            config,
-            teacher_inputs,
-            teacher_neuron_mask,
-            student_inputs,
-            rescaled_head_mask,
-            rescaled_neuron_mask,
-            layer_idx,
-        )
-        # For MHA, try to use the closed form solution as the matrix is small
-        try:
-            scale_factor = closed_form_solver(ATA, ATB)
-        except RuntimeError:
-            scale_factor = gmres_cupy_solver(ATA, ATB)
-        rescaled_head_mask[layer_idx] *= scale_factor
+        if torch.count_nonzero(student_head_mask[layer_idx]) != 0:
+            ATA, ATB = get_mha_lstsq(
+                model,
+                config,
+                teacher_inputs,
+                teacher_neuron_mask,
+                student_inputs,
+                rescaled_head_mask,
+                rescaled_neuron_mask,
+                layer_idx,
+            )
+            # For MHA, try to use the closed form solution as the matrix is small
+            try:
+                scale_factor = closed_form_solver(ATA, ATB)
+            except RuntimeError:
+                scale_factor = gmres_cupy_solver(ATA, ATB)
+            nonzero_heads = rescaled_head_mask[layer_idx].nonzero().flatten()
+            for index, scale in zip(nonzero_heads, scale_factor):
+                rescaled_head_mask[layer_idx][index] *= scale
 
-        ATA, ATB = get_ffn_lstsq(
-            model,
-            config,
-            teacher_inputs,
-            teacher_neuron_mask,
-            student_inputs,
-            rescaled_head_mask,
-            rescaled_neuron_mask,
-            layer_idx,
-        )
-        # For FFN, use the GMRES solution for numerical stability
-        scale_factor = gmres_cupy_solver(ATA, ATB)
-        nonzero_neurons = rescaled_neuron_mask[layer_idx].nonzero().squeeze()
-        for index, scale in zip(nonzero_neurons, scale_factor):
-            rescaled_neuron_mask[layer_idx][index] *= scale
+        if torch.count_nonzero(student_neuron_mask[layer_idx]) != 0:
+            ATA, ATB = get_ffn_lstsq(
+                model,
+                config,
+                teacher_inputs,
+                teacher_neuron_mask,
+                student_inputs,
+                rescaled_head_mask,
+                rescaled_neuron_mask,
+                layer_idx,
+            )
+            # For FFN, use the GMRES solution for numerical stability
+            scale_factor = gmres_cupy_solver(ATA, ATB)
+            nonzero_neurons = rescaled_neuron_mask[layer_idx].nonzero().flatten()
+            for index, scale in zip(nonzero_neurons, scale_factor):
+                rescaled_neuron_mask[layer_idx][index] *= scale
 
     return rescaled_head_mask, rescaled_neuron_mask
