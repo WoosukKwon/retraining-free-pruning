@@ -11,7 +11,7 @@ def lookup_latency(lut, mask):
         return lut[n - 1]
 
 
-def predict_latency(mha_lut, ffn_lut, head_mask, neuron_mask):
+def estimate_latency(mha_lut, ffn_lut, head_mask, neuron_mask):
     num_hidden_layers = head_mask.shape[0]
     total = 0
     for i in range(num_hidden_layers):
