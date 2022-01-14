@@ -17,7 +17,8 @@ from transformers import (
 from dataset.glue import glue_dataset, max_seq_length, avg_seq_length
 from dataset.squad import squad_dataset
 from efficiency.mac import compute_mask_mac
-from prune.search import search_mac
+from efficiency.latency import predict_latency
+from prune.search import search_mac, search_latency
 from evaluate.nlp import test_accuracy
 
 
@@ -42,10 +43,13 @@ parser.add_argument("--gpu", type=int, default=0)
 
 parser.add_argument("--metric", type=str, choices=[
     "mac",
+    "latency",
 ], default="mac")
 parser.add_argument("--constraint", type=float, default=0.5,
     help="MAC/latency constraint relative to the origin model",
 )
+parser.add_argument("--mha_lut", type=str, default=None)
+parser.add_argument("--ffn_lut", type=str, default=None)
 parser.add_argument("--num_samples", type=int, default=2048)
 parser.add_argument("--seed", type=int, default=0)
 
@@ -148,6 +152,23 @@ def main():
         )
         pruned_mac, orig_mac = compute_mask_mac(head_mask, neuron_mask, seq_len, config.hidden_size)
         logger.info(f"Pruned Model MAC: {pruned_mac / orig_mac * 100.0:.2f} %")
+    elif args.metric == "latency":
+        mha_lut = torch.load(args.mha_lut)
+        ffn_lut = torch.load(args.ffn_lut)
+        head_mask, neuron_mask = search_latency(
+            model,
+            config,
+            full_head_mask,
+            full_neuron_mask,
+            sample_dataloader,
+            args.constraint,
+            mha_lut,
+            ffn_lut,
+        )
+        orig_latency = predict_latency(mha_lut, ffn_lut, full_head_mask, full_neuron_mask)
+        pruned_latency = predict_latency(mha_lut, ffn_lut, head_mask, neuron_mask)
+        logger.info(f"Full Model Latency: {orig_latency:.2f} ms")
+        logger.info(f"Pruned Model Latency: {pruned_latency:.2f} ms ({pruned_latency / orig_latency * 100.0:.2f} %)")
 
     # Evaluate the accuracy
     test_acc = test_accuracy(model, head_mask, neuron_mask, tokenizer, args.task_name)
