@@ -132,9 +132,20 @@ def main():
     for param in model.parameters():
         param.requires_grad_(False)
 
+    full_head_mask = torch.ones(config.num_hidden_layers, config.num_attention_heads).cuda()
+    full_neuron_mask = torch.ones(config.num_hidden_layers, config.intermediate_size).cuda()
+
     # Search the optimal mask
     if args.metric == "mac":
-        head_mask, neuron_mask = search_mac(model, config, seq_len, sample_dataloader, args.constraint)
+        head_mask, neuron_mask = search_mac(
+            model,
+            config,
+            full_head_mask,
+            full_neuron_mask,
+            seq_len,
+            sample_dataloader,
+            args.constraint,
+        )
         pruned_mac, orig_mac = compute_mask_mac(head_mask, neuron_mask, seq_len, config.hidden_size)
         logger.info(f"Pruned Model MAC: {pruned_mac / orig_mac * 100.0:.2f} %")
 

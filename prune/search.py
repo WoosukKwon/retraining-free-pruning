@@ -5,7 +5,17 @@ from efficiency.mac import compute_mac, mac_per_head, mac_per_neuron
 from prune.rearrange import greedy_rearrange
 
 
-def search_mac(model, config, seq_len, dataloader, mac_constraint):
+def search_mac(
+    model,
+    config,
+    prev_head_mask,
+    prev_neuron_mask,
+    seq_len,
+    dataloader,
+    mac_constraint,
+):
+    assert mac_constraint < 1
+
     num_hidden_layers = config.num_hidden_layers
     num_attention_heads = config.num_attention_heads
     intermediate_size = config.intermediate_size
@@ -21,10 +31,7 @@ def search_mac(model, config, seq_len, dataloader, mac_constraint):
     )
     max_mac = mac_constraint * original_mac
 
-    ones_head_mask = torch.ones(num_hidden_layers, num_attention_heads).cuda()
-    ones_neuron_mask = torch.ones(num_hidden_layers, intermediate_size).cuda()
-
-    head_grads, neuron_grads = collect_mask_grads(model, ones_head_mask, ones_neuron_mask, dataloader)
+    head_grads, neuron_grads = collect_mask_grads(model, prev_head_mask, prev_neuron_mask, dataloader)
     head_importance = compute_fisher_info(head_grads)
     neuron_importance = compute_fisher_info(neuron_grads)
 
