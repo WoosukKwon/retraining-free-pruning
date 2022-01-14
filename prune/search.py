@@ -3,7 +3,7 @@ import torch
 from prune.fisher import collect_mask_grads, compute_fisher_info
 from prune.rearrange import greedy_rearrange
 from efficiency.mac import compute_mac, mac_per_head, mac_per_neuron
-from efficiency.latency import predict_latency, fit_latency_fn
+from efficiency.latency import estimate_latency, fit_latency_fn
 
 
 def rearrange_mask(mask, grads):
@@ -96,7 +96,7 @@ def search_latency(
     num_attention_heads = config.num_attention_heads
     intermediate_size = config.intermediate_size
 
-    original_latency = predict_latency(
+    original_latency = estimate_latency(
         mha_lut,
         ffn_lut,
         torch.ones_like(prev_head_mask),

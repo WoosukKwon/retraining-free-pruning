@@ -17,7 +17,7 @@ from transformers import (
 from dataset.glue import glue_dataset, max_seq_length, avg_seq_length
 from dataset.squad import squad_dataset
 from efficiency.mac import compute_mask_mac
-from efficiency.latency import predict_latency
+from efficiency.latency import estimate_latency
 from prune.search import search_mac, search_latency
 from evaluate.nlp import test_accuracy
 
@@ -165,8 +165,8 @@ def main():
             mha_lut,
             ffn_lut,
         )
-        orig_latency = predict_latency(mha_lut, ffn_lut, full_head_mask, full_neuron_mask)
-        pruned_latency = predict_latency(mha_lut, ffn_lut, head_mask, neuron_mask)
+        orig_latency = estimate_latency(mha_lut, ffn_lut, full_head_mask, full_neuron_mask)
+        pruned_latency = estimate_latency(mha_lut, ffn_lut, head_mask, neuron_mask)
         logger.info(f"Full Model Latency: {orig_latency:.2f} ms")
         logger.info(f"Pruned Model Latency: {pruned_latency:.2f} ms ({pruned_latency / orig_latency * 100.0:.2f} %)")
 
