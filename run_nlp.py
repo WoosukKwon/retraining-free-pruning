@@ -19,6 +19,7 @@ from dataset.squad import squad_dataset
 from efficiency.mac import compute_mask_mac
 from efficiency.latency import estimate_latency
 from prune.search import search_mac, search_latency
+from prune.merge import merge_neurons
 from evaluate.nlp import test_accuracy
 
 
@@ -41,6 +42,7 @@ parser.add_argument("--ckpt_dir", type=str, required=True)
 parser.add_argument("--output_dir", type=str, default=None)
 parser.add_argument("--gpu", type=int, default=0)
 
+parser.add_argument("--threshold", type=float, default=0.01)
 parser.add_argument("--metric", type=str, choices=[
     "mac",
     "latency",
@@ -169,6 +171,9 @@ def main():
         pruned_latency = estimate_latency(mha_lut, ffn_lut, head_mask, neuron_mask)
         logger.info(f"Full Model Latency: {orig_latency:.2f} ms")
         logger.info(f"Pruned Model Latency: {pruned_latency:.2f} ms ({pruned_latency / orig_latency * 100.0:.2f} %)")
+
+    # Merge pruned neurons into remaining neurons
+    merge_neurons(model, head_mask, neuron_mask, args.threshold, sample_dataloader)
 
     # Evaluate the accuracy
     test_acc = test_accuracy(model, head_mask, neuron_mask, tokenizer, args.task_name)
