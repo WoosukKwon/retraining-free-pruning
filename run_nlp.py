@@ -43,7 +43,7 @@ parser.add_argument("--ckpt_dir", type=str, required=True)
 parser.add_argument("--output_dir", type=str, default=None)
 parser.add_argument("--gpu", type=int, default=0)
 
-parser.add_argument("--threshold", type=float, default=0.005)
+parser.add_argument("--threshold", type=float, default=0)
 parser.add_argument("--metric", type=str, choices=[
     "mac",
     "latency",
