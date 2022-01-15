@@ -188,6 +188,7 @@ def main():
         head_mask,
         neuron_mask,
         sample_dataloader,
+        classification_task=not IS_SQUAD,
     )
 
     # Evaluate the accuracy
