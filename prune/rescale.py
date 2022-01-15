@@ -41,8 +41,8 @@ def get_mha_lstsq(
     inputs = []
     handle = hijack_input(mha_proj, inputs)
 
-    ATA = torch.zeros(num_nonzero_heads, num_nonzero_heads).cuda()
-    ATB = torch.zeros(num_nonzero_heads).cuda()
+    ATA = torch.zeros(num_nonzero_heads + 1, num_nonzero_heads + 1).cuda()
+    ATB = torch.zeros(num_nonzero_heads + 1).cuda()
 
     model.eval()
     for teacher_batch, student_batch in zip(teacher_inputs, student_inputs):
@@ -71,6 +71,7 @@ def get_mha_lstsq(
         outputs_per_head = outputs_per_head.view(num_nonzero_heads, -1)
 
         A = outputs_per_head.t()
+        A = torch.cat([A, torch.ones(A.shape[0], 1).cuda()], dim=1)
         B = teacher_output - mha_proj.dense.bias - input_tensor
         B = B.flatten()
 
@@ -183,7 +184,10 @@ def rescale_mask(
             try:
                 scale_factor = closed_form_solver(ATA, ATB)
             except RuntimeError:
-                scale_factor = gmres_cupy_solver(ATA, ATB)
+                scale_factor, success = gmres_cupy_solver(ATA, ATB)
+                if not success:
+                    break
+            scale_factor = scale_factor[:-1]
             nonzero_heads = rescaled_head_mask[layer_idx].nonzero().flatten()
             for index, scale in zip(nonzero_heads, scale_factor):
                 rescaled_head_mask[layer_idx][index] *= scale
@@ -200,7 +204,9 @@ def rescale_mask(
                 layer_idx,
             )
             # For FFN, use the GMRES solution for numerical stability
-            scale_factor = gmres_cupy_solver(ATA, ATB)
+            scale_factor, success = gmres_cupy_solver(ATA, ATB)
+            if not success:
+                break
             nonzero_neurons = rescaled_neuron_mask[layer_idx].nonzero().flatten()
             for index, scale in zip(nonzero_neurons, scale_factor):
                 rescaled_neuron_mask[layer_idx][index] *= scale
