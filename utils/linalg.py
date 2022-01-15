@@ -23,4 +23,4 @@ def gmres_cupy_solver(A, B):
         solution = gmres(CU_A, CU_B)
         X = cupy.asnumpy(solution[0])
         X = torch.from_numpy(X).to(A.device)
-    return X
+    return X, solution[1] == 0
