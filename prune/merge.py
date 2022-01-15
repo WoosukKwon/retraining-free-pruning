@@ -7,6 +7,7 @@ from utils.arch import (
     remove_padding,
     collect_layer_inputs,
 )
+from utils.pdist import all_pairs_dist
 
 
 @torch.no_grad()
@@ -34,7 +35,6 @@ def merge_neurons(
         handle = hijack_input(ffn2, ffn2_inputs)
 
         num_tokens = 0
-        pdist = torch.nn.PairwiseDistance(p=2, keepdim=False)
         l2_dist = torch.zeros(intermediate_size, intermediate_size).cuda()
         layer = get_layers(model)[layer_idx]
         for batch in layer_inputs:
@@ -46,10 +46,7 @@ def merge_neurons(
             hidden_states = hidden_states.t()
 
             num_tokens += hidden_states.shape[1]
-
-            # FIXME: performance
-            for i in range(intermediate_size):
-                l2_dist[i] += pdist(hidden_states, hidden_states[i])
+            l2_dist += all_pairs_dist(hidden_states)
 
         handle.remove()
         l2_dist = l2_dist / num_tokens
@@ -67,3 +64,4 @@ def merge_neurons(
 
             closest = nonzero_indicies[neuron_dist.argmin()]
             ffn2.dense.weight[:, closest] += ffn2.dense.weight[:, pruned_idx]
+            ffn2.dense.weight[:, pruned_idx].zero_()
