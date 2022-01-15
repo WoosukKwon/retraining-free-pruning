@@ -46,6 +46,15 @@ def get_ffn2(model, index):
     return ffn2
 
 
+def get_classifier(model):
+    backbone = get_backbone(model)
+    if backbone.pooler is not None:
+        classifier = model.classifier
+    else:
+        classifier = model.classifier.out_proj
+    return classifier
+
+
 def register_mask(module, mask):
     hook = lambda _, inputs: (inputs[0] * mask, inputs[1])
     handle = module.register_forward_pre_hook(hook)
