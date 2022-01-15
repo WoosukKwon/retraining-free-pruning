@@ -5,56 +5,14 @@ from utils.linalg import closed_form_solver, gmres_cupy_solver
 
 
 from utils.arch import (
-    get_encoder,
     get_layers,
     get_mha_proj,
     get_ffn2,
     hijack_input,
     MaskNeurons,
     remove_padding,
+    collect_layer_inputs,
 )
-
-
-@torch.no_grad()
-def collect_layer_inputs(
-    model,
-    head_mask,
-    neuron_mask,
-    layer_idx,
-    prev_inputs,
-):
-    layers = get_layers(model)
-    target_layer = layers[layer_idx]
-
-    inputs = []
-    if layer_idx == 0:
-        encoder = get_encoder(model)
-        layers = encoder.layer
-        encoder.layers = layers[:1]
-
-        handle = hijack_input(target_layer, inputs)
-        for batch in prev_inputs:
-            for k, v in batch.items():
-                batch[k] = v.to("cuda")
-            with MaskNeurons(model, neuron_mask):
-                model(head_mask=head_mask, **batch)
-
-        handle.remove()
-        encoder.layers = layers
-        inputs = [list(x) for x in inputs]
-    else:
-        prev_layer = layers[layer_idx - 1]
-
-        for batch in prev_inputs:
-            batch[2] = head_mask[layer_idx - 1].view(1, -1, 1, 1)
-            with MaskNeurons(model, neuron_mask):
-                prev_output = prev_layer(*batch)
-
-            batch[0] = prev_output[0]
-            batch[2] = head_mask[layer_idx].view(1, -1, 1, 1)
-            inputs.append(batch)
-
-    return inputs
 
 
 @torch.no_grad()
@@ -181,7 +139,7 @@ def get_ffn_lstsq(
 
 
 @torch.no_grad()
-def rescale(
+def rescale_mask(
     model,
     config,
     teacher_head_mask,
