@@ -18,10 +18,12 @@ from dataset.glue import glue_dataset, max_seq_length, avg_seq_length
 from dataset.squad import squad_dataset
 from efficiency.mac import compute_mask_mac
 from efficiency.latency import estimate_latency
+from prune.fisher import collect_mask_grads
 from prune.search import search_mac, search_latency
 from prune.merge import merge_neurons
 from prune.rescale import rescale_mask
 from evaluate.nlp import test_accuracy
+from utils.schedule import get_pruning_schedule
 
 
 logger = logging.getLogger(__name__)
@@ -99,6 +101,7 @@ def main():
         args.model_name,
         use_fast=True,
         use_auth_token=None,
+        local_files_only=True,
     )
 
     # Load the training dataset
@@ -144,28 +147,46 @@ def main():
     full_neuron_mask = torch.ones(config.num_hidden_layers, config.intermediate_size).cuda()
 
     # Search the optimal mask
+    head_grads, neuron_grads = collect_mask_grads(
+        model,
+        full_head_mask,
+        full_neuron_mask,
+        sample_dataloader,
+    )
+    teacher_constraint, student_constraint = get_pruning_schedule(args.constraint, 2)
     if args.metric == "mac":
-        head_mask, neuron_mask = search_mac(
-            model,
+        teacher_head_mask, teacher_neuron_mask = search_mac(
             config,
-            full_head_mask,
-            full_neuron_mask,
+            head_grads,
+            neuron_grads,
             seq_len,
-            sample_dataloader,
-            args.constraint,
+            teacher_constraint,
+        )
+        head_mask, neuron_mask = search_mac(
+            config,
+            head_grads,
+            neuron_grads,
+            seq_len,
+            student_constraint,
         )
         pruned_mac, orig_mac = compute_mask_mac(head_mask, neuron_mask, seq_len, config.hidden_size)
         logger.info(f"Pruned Model MAC: {pruned_mac / orig_mac * 100.0:.2f} %")
     elif args.metric == "latency":
         mha_lut = torch.load(args.mha_lut)
         ffn_lut = torch.load(args.ffn_lut)
-        head_mask, neuron_mask = search_latency(
-            model,
+        teacher_head_mask, teacher_neuron_mask = search_latency(
             config,
-            full_head_mask,
-            full_neuron_mask,
-            sample_dataloader,
-            args.constraint,
+            head_grads,
+            neuron_grads,
+            teacher_constraint,
+            mha_lut,
+            ffn_lut,
+        )
+        head_mask, neuron_mask = search_latency(
+            config,
+            head_grads,
+            neuron_grads,
+            student_constraint,
             mha_lut,
             ffn_lut,
         )
@@ -183,8 +204,8 @@ def main():
     head_mask, neuron_mask = rescale_mask(
         model,
         config,
-        full_head_mask,
-        full_neuron_mask,
+        teacher_head_mask,
+        teacher_neuron_mask,
         head_mask,
         neuron_mask,
         sample_dataloader,

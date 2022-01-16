@@ -21,13 +21,12 @@ def rearrange_mask(mask, grads):
 
 
 def search_mac(
-    model,
     config,
-    prev_head_mask,
-    prev_neuron_mask,
+    head_grads,
+    neuron_grads,
     seq_len,
-    dataloader,
     mac_constraint,
+    rearrange=True,
 ):
     assert mac_constraint < 1
 
@@ -46,7 +45,6 @@ def search_mac(
     )
     max_mac = mac_constraint * original_mac
 
-    head_grads, neuron_grads = collect_mask_grads(model, prev_head_mask, prev_neuron_mask, dataloader)
     head_importance = compute_fisher_info(head_grads)
     neuron_importance = compute_fisher_info(neuron_grads)
 
@@ -75,20 +73,20 @@ def search_mac(
     neuron_mask = neuron_mask.view(num_hidden_layers, intermediate_size)
 
     # Rearrange the mask
-    head_mask = rearrange_mask(head_mask, head_grads)
-    neuron_mask = rearrange_mask(neuron_mask, neuron_grads)
+    if rearrange:
+        head_mask = rearrange_mask(head_mask, head_grads)
+        neuron_mask = rearrange_mask(neuron_mask, neuron_grads)
     return head_mask, neuron_mask
 
 
 def search_latency(
-    model,
     config,
-    prev_head_mask,
-    prev_neuron_mask,
-    dataloader,
+    head_grads,
+    neuron_grads,
     latency_constraint,
     mha_lut,
     ffn_lut,
+    rearrange=True,
 ):
     assert latency_constraint < 1
 
@@ -99,15 +97,14 @@ def search_latency(
     original_latency = estimate_latency(
         mha_lut,
         ffn_lut,
-        torch.ones_like(prev_head_mask),
-        torch.ones_like(prev_neuron_mask),
+        torch.ones(num_hidden_layers, num_attention_heads),
+        torch.ones(num_hidden_layers, intermediate_size),
     )
     max_latency = latency_constraint * original_latency
 
     mha_latency_fn = fit_latency_fn(mha_lut)
     ffn_latency_fn = fit_latency_fn(ffn_lut)
 
-    head_grads, neuron_grads = collect_mask_grads(model, prev_head_mask, prev_neuron_mask, dataloader)
     head_importance = compute_fisher_info(head_grads)
     neuron_importance = compute_fisher_info(neuron_grads)
 
@@ -161,15 +158,16 @@ def search_latency(
     neuron_indicies = remaining_neuron_indicies.flatten()[neuron_indicies]
     neuron_indicies = torch.cat([base_neuron_indicies, neuron_indicies], dim=0)
 
-    head_mask = torch.zeros_like(prev_head_mask).flatten()
+    head_mask = torch.zeros(num_hidden_layers, num_attention_heads).flatten()
     head_mask[head_indicies] = 1.0
     head_mask = head_mask.view(num_hidden_layers, num_attention_heads)
 
-    neuron_mask = torch.zeros_like(prev_neuron_mask).flatten()
+    neuron_mask = torch.zeros(num_hidden_layers, intermediate_size).flatten()
     neuron_mask[neuron_indicies] = 1.0
     neuron_mask = neuron_mask.view(num_hidden_layers, intermediate_size)
 
     # Rearrange the mask
-    head_mask = rearrange_mask(head_mask, head_grads)
-    neuron_mask = rearrange_mask(neuron_mask, neuron_grads)
+    if rearrange:
+        head_mask = rearrange_mask(head_mask, head_grads)
+        neuron_mask = rearrange_mask(neuron_mask, neuron_grads)
     return head_mask, neuron_mask
