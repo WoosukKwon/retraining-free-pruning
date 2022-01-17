@@ -1,6 +1,6 @@
 import torch
 
-from prune.fisher import collect_mask_grads, compute_fisher_info
+from prune.fisher import compute_fisher_info
 from prune.rearrange import greedy_rearrange
 from efficiency.mac import compute_mac, mac_per_head, mac_per_neuron
 from efficiency.latency import estimate_latency, fit_latency_fn
