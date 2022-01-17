@@ -1,12 +1,14 @@
 import torch
+from datasets import load_metric
 
 from utils.arch import apply_neuron_mask
 from dataset.glue import target_dev_metric
 
 
 @torch.no_grad()
-def eval_glue_acc(model, head_mask, neuron_mask, dataloader, task_name, metric):
+def eval_glue_acc(model, head_mask, neuron_mask, dataloader, task_name):
     IS_STSB = model.num_labels == 1
+    metric = load_metric("glue", task_name)
 
     model.eval()
     handles = apply_neuron_mask(model, neuron_mask)

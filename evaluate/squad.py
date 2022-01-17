@@ -1,4 +1,5 @@
 import torch
+from datasets import load_metric
 
 from utils.arch import apply_neuron_mask
 from dataset.squad import create_and_fill_np_array, post_processing_function
@@ -13,11 +14,11 @@ def eval_squad_acc(
     eval_dataset,
     eval_examples,
     task_name,
-    metric,
 ):
-    handles = apply_neuron_mask(model, neuron_mask)
+    metric = load_metric(task_name)
 
     model.eval()
+    handles = apply_neuron_mask(model, neuron_mask)
     all_start_logits = []
     all_end_logits = []
     for batch in dataloader:

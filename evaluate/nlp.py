@@ -1,5 +1,4 @@
 import torch
-from datasets import load_metric
 
 from dataset.glue import glue_dataloader
 from dataset.squad import squad_test_dataloader
@@ -12,7 +11,6 @@ def test_accuracy(model, head_mask, neuron_mask, tokenizer, task_name):
     IS_SQUAD = "squad" in task_name
 
     test_batch_size = 32 if IS_SQUAD else 128
-    metric = load_metric(task_name) if IS_SQUAD else load_metric("glue", task_name)
     if IS_SQUAD:
         eval_dataset, eval_examples, test_dataloader = squad_test_dataloader(
             task_name,
@@ -28,7 +26,6 @@ def test_accuracy(model, head_mask, neuron_mask, tokenizer, task_name):
             eval_dataset,
             eval_examples,
             task_name,
-            metric,
         )
     else:
         test_dataloader = glue_dataloader(
@@ -44,6 +41,5 @@ def test_accuracy(model, head_mask, neuron_mask, tokenizer, task_name):
             neuron_mask,
             test_dataloader,
             task_name,
-            metric,
         )
     return acc
