@@ -20,10 +20,10 @@ from efficiency.mac import compute_mask_mac
 from efficiency.latency import estimate_latency
 from prune.fisher import collect_mask_grads
 from prune.search import search_mac, search_latency
+from prune.rearrange import rearrange_mask
 from prune.merge import merge_neurons
 from prune.rescale import rescale_mask
 from evaluate.nlp import test_accuracy
-from utils.schedule import get_pruning_schedule
 
 
 logger = logging.getLogger(__name__)
@@ -153,7 +153,7 @@ def main():
         full_neuron_mask,
         sample_dataloader,
     )
-    teacher_constraint, student_constraint = get_pruning_schedule(args.constraint, 2)
+    teacher_constraint = 0.9
     if args.metric == "mac":
         teacher_head_mask, teacher_neuron_mask = search_mac(
             config,
@@ -167,7 +167,7 @@ def main():
             head_grads,
             neuron_grads,
             seq_len,
-            student_constraint,
+            args.constraint,
         )
         pruned_mac, orig_mac = compute_mask_mac(head_mask, neuron_mask, seq_len, config.hidden_size)
         logger.info(f"Pruned Model MAC: {pruned_mac / orig_mac * 100.0:.2f} %")
@@ -186,7 +186,7 @@ def main():
             config,
             head_grads,
             neuron_grads,
-            student_constraint,
+            args.constraint,
             mha_lut,
             ffn_lut,
         )
@@ -194,6 +194,10 @@ def main():
         pruned_latency = estimate_latency(mha_lut, ffn_lut, head_mask, neuron_mask)
         logger.info(f"Full Model Latency: {orig_latency:.2f} ms")
         logger.info(f"Pruned Model Latency: {pruned_latency:.2f} ms ({pruned_latency / orig_latency * 100.0:.2f} %)")
+
+    # Rearrange the mask
+    head_mask = rearrange_mask(head_mask, head_grads)
+    neuron_mask = rearrange_mask(neuron_mask, neuron_grads)
 
     # Merge pruned neurons into remaining neurons
     if args.threshold > 0:

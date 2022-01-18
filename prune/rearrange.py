@@ -29,3 +29,17 @@ def greedy_rearrange(mask, grads):
     new_mask = torch.ones_like(mask)
     new_mask[masked_indicies] = 0
     return new_mask
+
+
+def rearrange_mask(mask, grads):
+    # NOTE: temporarily convert to CPU tensors as the arithmetic intensity is very low
+    device = mask.device
+    mask = mask.cpu()
+    grads = grads.cpu()
+
+    num_hidden_layers = mask.shape[0]
+    for i in range(num_hidden_layers):
+        mask[i] = greedy_rearrange(mask[i], grads[:, i, :])
+
+    mask = mask.to(device)
+    return mask

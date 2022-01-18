@@ -1,23 +1,8 @@
 import torch
 
 from prune.fisher import compute_fisher_info
-from prune.rearrange import greedy_rearrange
 from efficiency.mac import compute_mac, mac_per_head, mac_per_neuron
 from efficiency.latency import estimate_latency, fit_latency_fn
-
-
-def rearrange_mask(mask, grads):
-    # NOTE: temporarily convert to CPU tensors as the arithmetic intensity is very low
-    device = mask.device
-    mask = mask.cpu()
-    grads = grads.cpu()
-
-    num_hidden_layers = mask.shape[0]
-    for i in range(num_hidden_layers):
-        mask[i] = greedy_rearrange(mask[i], grads[:, i, :])
-
-    mask = mask.to(device)
-    return mask
 
 
 def search_mac(
@@ -26,7 +11,6 @@ def search_mac(
     neuron_grads,
     seq_len,
     mac_constraint,
-    rearrange=True,
 ):
     assert mac_constraint < 1
 
@@ -72,10 +56,6 @@ def search_mac(
     neuron_mask[neuron_indicies] = 1.0
     neuron_mask = neuron_mask.view(num_hidden_layers, intermediate_size)
 
-    # Rearrange the mask
-    if rearrange:
-        head_mask = rearrange_mask(head_mask, head_grads)
-        neuron_mask = rearrange_mask(neuron_mask, neuron_grads)
     return head_mask, neuron_mask
 
 
@@ -86,7 +66,6 @@ def search_latency(
     latency_constraint,
     mha_lut,
     ffn_lut,
-    rearrange=True,
 ):
     assert latency_constraint < 1
 
@@ -166,8 +145,4 @@ def search_latency(
     neuron_mask[neuron_indicies] = 1.0
     neuron_mask = neuron_mask.view(num_hidden_layers, intermediate_size)
 
-    # Rearrange the mask
-    if rearrange:
-        head_mask = rearrange_mask(head_mask, head_grads)
-        neuron_mask = rearrange_mask(neuron_mask, neuron_grads)
     return head_mask, neuron_mask
