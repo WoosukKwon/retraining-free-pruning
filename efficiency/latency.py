@@ -4,7 +4,7 @@ import torch
 
 @torch.no_grad()
 def lookup_latency(lut, mask):
-    n = int(mask.sum())
+    n = int(torch.sum(mask != 0))
     if n == 0:
         return 0
     else:
