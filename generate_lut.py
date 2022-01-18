@@ -21,12 +21,12 @@ class BertMHA(nn.Module):
         self.num_attention_heads = num_attention_heads
         self.attention_head_size = attention_head_size
 
-        all_head_size = num_attention_heads * attention_head_size
-        self.query = nn.Linear(hidden_size, all_head_size)
-        self.key = nn.Linear(hidden_size, all_head_size)
-        self.value = nn.Linear(hidden_size, all_head_size)
+        self.all_head_size = num_attention_heads * attention_head_size
+        self.query = nn.Linear(hidden_size, self.all_head_size)
+        self.key = nn.Linear(hidden_size, self.all_head_size)
+        self.value = nn.Linear(hidden_size, self.all_head_size)
 
-        self.output = nn.Linear(all_head_size, hidden_size)
+        self.output = nn.Linear(self.all_head_size, hidden_size)
         self.LayerNorm = nn.LayerNorm(hidden_size)
 
     def transpose_for_scores(self, x):
@@ -133,6 +133,8 @@ if __name__ == "__main__":
     parser.add_argument("--seq_len", type=int, required=True)
     parser.add_argument("--output_dir", type=str, required=True)
     args = parser.parse_args()
+
+    os.makedirs(args.output_dir, exist_ok=True)
 
     config = AutoConfig.from_pretrained(args.model_name)
     input_shape = (args.bs, args.seq_len, config.hidden_size)
