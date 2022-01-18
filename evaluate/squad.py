@@ -1,8 +1,9 @@
 import torch
 from datasets import load_metric
 
-from utils.arch import apply_neuron_mask
 from dataset.squad import create_and_fill_np_array, post_processing_function
+from utils.arch import apply_neuron_mask
+from utils.meter import AverageMeter
 
 
 @torch.no_grad()
@@ -45,3 +46,26 @@ def eval_squad_acc(
     eval_results = metric.compute(predictions=prediction.predictions, references=prediction.label_ids)
     accuracy = eval_results["f1"]
     return accuracy
+
+
+@torch.no_grad()
+def eval_squad_loss(
+    model,
+    head_mask,
+    neuron_mask,
+    dataloader,
+):
+    loss = AverageMeter("squad_loss")
+
+    model.eval()
+    handles = apply_neuron_mask(model, neuron_mask)
+    for batch in dataloader:
+        for k, v in batch.items():
+            batch[k] = v.to("cuda", non_blocking=True)
+
+        outputs = model(head_mask=head_mask, **batch)
+        loss.update(outputs.loss, n=batch["input_ids"].shape[0])
+    for handle in handles:
+        handle.remove()
+
+    return loss.avg
