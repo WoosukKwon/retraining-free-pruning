@@ -101,7 +101,6 @@ def main():
         args.model_name,
         use_fast=True,
         use_auth_token=None,
-        local_files_only=True,
     )
 
     # Load the training dataset
