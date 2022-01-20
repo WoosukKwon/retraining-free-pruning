@@ -51,9 +51,9 @@ def eval_librispeech_wer(model, head_mask, neuron_mask, dataloader, processor):
         pred_strs += pred_str
         label_strs += label_str
 
-    for p, l in zip(pred_strs[:50], label_strs[:50]):
-        print(p)
-        print(l)
+    #for p, l in zip(pred_strs[:50], label_strs[:50]):
+    #    print(p)
+    #    print(l)
     wer = metric.compute(predictions=pred_strs, references=label_strs)
 
     return wer

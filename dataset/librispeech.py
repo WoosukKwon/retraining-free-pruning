@@ -139,10 +139,11 @@ class DataCollatorCTCWithPadding:
 def load_shard_dataset(paths):
     paths = paths.split(',')
     dataset_list = []
-    files = os.listdir(path)
-    for f in tqdm.tqdm(files):
-        print(os.path.join(path, f))
-        dataset_list.append(datasets.load_from_disk(os.path.join(path, f)))
+    for path in paths:
+        files = os.listdir(path)
+        for f in tqdm.tqdm(files):
+            print(os.path.join(path, f))
+            dataset_list.append(datasets.load_from_disk(os.path.join(path, f)))
     concat_dataset = datasets.concatenate_datasets(dataset_list)
     print(concat_dataset)
     return concat_dataset

@@ -30,7 +30,8 @@ logger = logging.getLogger(__name__)
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_name", type=str, default='facebook/wav2vec2-base-960h')
 parser.add_argument("--task_name", type=str, choices=['librispeech'], default='librispeech')
-parser.add_argument("--dataset_path", type=str, required=True)
+parser.add_argument("--train_dataset_path", type=str, required=True)
+parser.add_argument("--valid_dataset_path", type=str, required=True)
 parser.add_argument("--ckpt_dir", type=str, required=True)
 parser.add_argument("--output_dir", type=str, default=None)
 parser.add_argument("--gpu", type=int, default=0)
@@ -81,7 +82,8 @@ def main():
     orthography = Orthography.from_name(args.task_name)
     processor = orthography.create_processor(args.model_name)
 
-    dataset = load_shard_dataset(args.dataset_path) #TODO: split this into val/train
+    training_dataset = load_shard_dataset(args.train_dataset_path)
+    valid_dataset = load_shard_dataset(args.valid_dataset_path) 
 
     collate_fn = DataCollatorCTCWithPadding(processor=processor, padding=True)
 
@@ -92,100 +94,12 @@ def main():
         vocab_size=len(processor.tokenizer),
     )
 
-
-    batch_size = 32
-    dataloader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        collate_fn=collate_fn,
-        shuffle=False,
-        pin_memory=True,
-    )
-
-    model = model.cuda()
-    model.eval()
-
-    for param in model.parameters():
-        param.requires_grad_(False)
-
-    wer = test_wer(
-        model,
-        head_mask=None,
-        neuron_mask=None,
-        dataset=dataset,
-        collate_fn=collate_fn,
-        processor=processor,
-    )
-
-    print(wer)
-    print(AA)
-    IS_SQUAD = "squad" in args.task_name
-    IS_LARGE = "large" in args.model_name
-    seq_len = 170 if IS_SQUAD else avg_seq_length(args.task_name)
-
-    # Create the output directory
-    if args.output_dir is None:
-        args.output_dir = os.path.join(
-            "outputs",
-            args.model_name,
-            args.task_name,
-            f"{args.metric}_{args.constraint}",
-            f"threshold_{args.threshold}",
-        )
-    os.makedirs(args.output_dir, exist_ok=True)
-
-    # Initiate the logger
-    logging.basicConfig(
-        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-        datefmt="%m/%d/%Y %H:%M:%S",
-        level=logging.INFO,
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler(os.path.join(args.output_dir, "log.txt")),
-        ],
-    )
-    logger.info(args)
-
-    # Set a GPU and the experiment seed
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
-    set_seed(args.seed)
-    logger.info(f"Seed number: {args.seed}")
-
-    # Load the finetuned model and the corresponding tokenizer
-    config = AutoConfig.from_pretrained(args.ckpt_dir)
-    model_generator = AutoModelForQuestionAnswering if IS_SQUAD else AutoModelForSequenceClassification
-    model = model_generator.from_pretrained(args.ckpt_dir, config=config)
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.model_name,
-        use_fast=True,
-        use_auth_token=None,
-    )
-
-    # Load the training dataset
-    if IS_SQUAD:
-        training_dataset = squad_dataset(
-            args.task_name,
-            tokenizer,
-            training=True,
-            max_seq_len=384,
-            pad_to_max=False,
-        )
-    else:
-        training_dataset = glue_dataset(
-            args.task_name,
-            tokenizer,
-            training=True,
-            max_seq_len=max_seq_length(args.task_name),
-            pad_to_max=False,
-        )
-
-    # Sample the examples to be used for search
-    collate_fn = DataCollatorWithPadding(tokenizer)
     sample_dataset = Subset(
         training_dataset,
         np.random.choice(len(training_dataset), args.num_samples).tolist(),
     )
-    sample_batch_size = int((12 if IS_SQUAD else 32) * (0.5 if IS_LARGE else 1))
+
+    sample_batch_size = 16
     sample_dataloader = DataLoader(
         sample_dataset,
         batch_size=sample_batch_size,
@@ -194,15 +108,18 @@ def main():
         pin_memory=True,
     )
 
-    # Prepare the model
     model = model.cuda()
     model.eval()
+    config = model.wav2vec2.config
+
     for param in model.parameters():
         param.requires_grad_(False)
 
     full_head_mask = torch.ones(config.num_hidden_layers, config.num_attention_heads).cuda()
     full_neuron_mask = torch.ones(config.num_hidden_layers, config.intermediate_size).cuda()
 
+    # TODO, this code is copied from run_nlp.py
+    '''
     # Search the optimal mask
     head_grads, neuron_grads = collect_mask_grads(
         model,
@@ -272,10 +189,20 @@ def main():
         sample_dataloader,
         classification_task=not IS_SQUAD,
     )
+    '''
 
-    # Evaluate the accuracy
-    test_acc = test_accuracy(model, head_mask, neuron_mask, tokenizer, args.task_name)
-    logger.info(f"{args.task_name} Test accuracy: {test_acc:.4f}")
+    head_mask, neuron_mask = None, None # TODO remove this later
+
+    wer = test_wer(
+        model,
+        head_mask=head_mask,
+        neuron_mask=neuron_mask,
+        dataset=valid_dataset,
+        collate_fn=collate_fn,
+        processor=processor,
+    )
+
+    logger.info(f"Test WER: {wer:.4f}")
 
     # Save the masks
     torch.save(head_mask, os.path.join(args.output_dir, "head_mask.pt"))
