@@ -10,7 +10,7 @@ from dataset.glue import target_dev_metric
 
 @torch.no_grad()
 def test_wer(model, head_mask, neuron_mask, dataset, collate_fn, processor):
-    test_batch_size = 16
+    test_batch_size = 8
     test_dataloader = DataLoader(
         dataset,
         batch_size=test_batch_size,

@@ -607,7 +607,6 @@ class Wav2Vec2Attention(nn.Module):
 
         attn_weights = nn.functional.softmax(attn_weights, dim=-1)
 
-        print(head_mask)
         if head_mask is not None:
             if head_mask.size() != (self.num_heads,):
                 raise ValueError(
