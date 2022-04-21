@@ -24,6 +24,7 @@ from prune.search import search_mac, search_latency
 from prune.rearrange import rearrange_mask
 from prune.rescale import rescale_mask
 from evaluate.nlp import test_accuracy
+from utils.schedule import get_pruning_schedule
 
 
 logger = logging.getLogger(__name__)
@@ -152,7 +153,7 @@ def main():
         full_neuron_mask,
         sample_dataloader,
     )
-    teacher_constraint = 0.9
+    teacher_constraint = get_pruning_schedule(target=args.constraint, num_iter=2)
     if args.metric == "mac":
         teacher_head_mask, teacher_neuron_mask = search_mac(
             config,
@@ -189,10 +190,8 @@ def main():
             mha_lut,
             ffn_lut,
         )
-        orig_latency = estimate_latency(mha_lut, ffn_lut, full_head_mask, full_neuron_mask)
         pruned_latency = estimate_latency(mha_lut, ffn_lut, head_mask, neuron_mask)
-        logger.info(f"Full Model Latency: {orig_latency:.2f} ms")
-        logger.info(f"Pruned Model Latency: {pruned_latency:.2f} ms ({pruned_latency / orig_latency * 100.0:.2f} %)")
+        logger.info(f"Pruned Model Latency: {pruned_latency:.2f} ms")
 
     # Rearrange the mask
     head_mask = rearrange_mask(head_mask, head_grads)
