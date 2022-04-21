@@ -50,7 +50,7 @@ parser.add_argument("--metric", type=str, choices=[
     "mac",
     "latency",
 ], default="mac")
-parser.add_argument("--constraint", type=float, default=0.5,
+parser.add_argument("--constraint", type=float, required=True,
     help="MAC/latency constraint relative to the original model",
 )
 parser.add_argument("--mha_lut", type=str, default=None)
