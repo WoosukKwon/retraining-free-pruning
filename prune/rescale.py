@@ -1,9 +1,7 @@
 from tqdm import tqdm
 import torch
 
-from utils.linalg import closed_form_solver, gmres_cupy_solver
-
-
+from utils.linalg import lsmr_cupy_solver
 from utils.arch import (
     get_layers,
     get_mha_proj,
@@ -178,7 +176,7 @@ def rescale_mask(
             prev_inputs=dataloader if layer_idx == 0 else student_inputs,
         )
 
-        if torch.count_nonzero(student_head_mask[layer_idx]) != 0:
+        if torch.count_nonzero(student_head_mask[layer_idx]) != 0 and layer_idx != 0:
             ATA, ATB = get_mha_lstsq(
                 model,
                 config,
@@ -189,14 +187,12 @@ def rescale_mask(
                 rescaled_neuron_mask,
                 layer_idx,
             )
-            # For MHA, try to use the closed form solution as the matrix is small
-            try:
-                scale_factor = closed_form_solver(ATA, ATB)
-            except RuntimeError:
-                scale_factor, success = gmres_cupy_solver(ATA, ATB)
-                if not success:
-                    break
+            scale_factor, success = lsmr_cupy_solver(ATA, ATB)
+            if not success:
+                break
             scale_factor = scale_factor[:-1]
+            if scale_factor.max() > 10 or scale_factor.min() < -10:
+                break
             nonzero_heads = rescaled_head_mask[layer_idx].nonzero().flatten()
             for index, scale in zip(nonzero_heads, scale_factor):
                 rescaled_head_mask[layer_idx][index] *= scale
@@ -214,9 +210,10 @@ def rescale_mask(
                 layer_idx,
                 cls_only=cls_only,
             )
-            # For FFN, use the GMRES solution for numerical stability
-            scale_factor, success = gmres_cupy_solver(ATA, ATB)
+            scale_factor, success = lsmr_cupy_solver(ATA, ATB)
             if not success:
+                break
+            if scale_factor.max() > 10 or scale_factor.min() < -10:
                 break
             nonzero_neurons = rescaled_neuron_mask[layer_idx].nonzero().flatten()
             for index, scale in zip(nonzero_neurons, scale_factor):
