@@ -51,7 +51,7 @@ parser.add_argument("--metric", type=str, choices=[
     "latency",
 ], default="mac")
 parser.add_argument("--constraint", type=float, default=0.5,
-    help="MAC/latency constraint relative to the origin model",
+    help="MAC/latency constraint relative to the original model",
 )
 parser.add_argument("--mha_lut", type=str, default=None)
 parser.add_argument("--ffn_lut", type=str, default=None)
@@ -71,7 +71,8 @@ def main():
             "outputs",
             args.model_name,
             args.task_name,
-            f"{args.metric}_{args.constraint}",
+            args.metric,
+            str(args.constraint),
             f"seed_{args.seed}",
         )
     os.makedirs(args.output_dir, exist_ok=True)
