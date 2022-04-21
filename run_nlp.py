@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import time
 
 import numpy as np
 import torch
@@ -21,7 +22,6 @@ from efficiency.latency import estimate_latency
 from prune.fisher import collect_mask_grads
 from prune.search import search_mac, search_latency
 from prune.rearrange import rearrange_mask
-from prune.merge import merge_neurons
 from prune.rescale import rescale_mask
 from evaluate.nlp import test_accuracy
 
@@ -45,7 +45,6 @@ parser.add_argument("--ckpt_dir", type=str, required=True)
 parser.add_argument("--output_dir", type=str, default=None)
 parser.add_argument("--gpu", type=int, default=0)
 
-parser.add_argument("--threshold", type=float, default=0)
 parser.add_argument("--metric", type=str, choices=[
     "mac",
     "latency",
@@ -72,7 +71,7 @@ def main():
             args.model_name,
             args.task_name,
             f"{args.metric}_{args.constraint}",
-            f"threshold_{args.threshold}",
+            f"seed_{args.seed}",
         )
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -145,6 +144,7 @@ def main():
     full_head_mask = torch.ones(config.num_hidden_layers, config.num_attention_heads).cuda()
     full_neuron_mask = torch.ones(config.num_hidden_layers, config.intermediate_size).cuda()
 
+    start = time.time()
     # Search the optimal mask
     head_grads, neuron_grads = collect_mask_grads(
         model,
@@ -198,11 +198,6 @@ def main():
     head_mask = rearrange_mask(head_mask, head_grads)
     neuron_mask = rearrange_mask(neuron_mask, neuron_grads)
 
-    # Merge pruned neurons into remaining neurons
-    if args.threshold > 0:
-        merge_neurons(model, head_mask, neuron_mask, args.threshold, sample_dataloader)
-
-    # FIXME
     # Rescale the mask by solving a least squares problem
     head_mask, neuron_mask = rescale_mask(
         model,
@@ -214,6 +209,10 @@ def main():
         sample_dataloader,
         classification_task=not IS_SQUAD,
     )
+
+    # Print the pruning time
+    end = time.time()
+    logger.info(f"{args.task_name} Pruning time (s): {end - start}")
 
     # Evaluate the accuracy
     test_acc = test_accuracy(model, head_mask, neuron_mask, tokenizer, args.task_name)
