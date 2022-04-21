@@ -154,7 +154,7 @@ def main():
         full_neuron_mask,
         sample_dataloader,
     )
-    teacher_constraint = get_pruning_schedule(target=args.constraint, num_iter=2)
+    teacher_constraint = get_pruning_schedule(target=args.constraint, num_iter=2)[0]
     if args.metric == "mac":
         teacher_head_mask, teacher_neuron_mask = search_mac(
             config,
