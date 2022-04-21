@@ -3,6 +3,7 @@
 Inspired by post-training quantization (PTQ) toolkits, we propose a post-training pruning framework tailored for Transformers.
 Different from existing pruning methods, our framework does not require re-training to retain high accuracy after pruning.
 This makes our method fully automated and 10x-1000x faster in terms of pruning time.
+[[paper link](https://arxiv.org/abs/2204.09656)]
 
 <div align="center">
   <img src=figures/overview.png>
