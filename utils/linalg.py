@@ -1,6 +1,6 @@
 import torch
 import cupy
-from cupyx.scipy.sparse.linalg import gmres
+from cupyx.scipy.sparse.linalg import lsmr
 
 
 @torch.no_grad()
@@ -14,13 +14,15 @@ def closed_form_solver(A, B):
 
 
 @torch.no_grad()
-def gmres_cupy_solver(A, B):
+def lsmr_cupy_solver(A, B):
+    B = B - A.sum(dim=1)
     if B.shape[0] == 1:
         X = B / A[0, 0]
     else:
         CU_A = cupy.asarray(A.cpu().numpy())
         CU_B = cupy.asarray(B.cpu().numpy())
-        solution = gmres(CU_A, CU_B)
+        solution = lsmr(CU_A, CU_B, damp=1)
         X = cupy.asnumpy(solution[0])
         X = torch.from_numpy(X).to(A.device)
-    return X, solution[1] == 0
+    X = X + 1
+    return X, solution[1] < 3
