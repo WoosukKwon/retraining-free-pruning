@@ -42,6 +42,7 @@ def search_mac(
         heads_mac = mac_per_head(seq_len, hidden_size, attention_head_size) * num_heads
         neurons_mac = max_mac - heads_mac
         num_neurons = int(neurons_mac / mac_per_neuron(seq_len, hidden_size))
+        num_neurons = max(num_neurons, 0)
 
         total_importance = sorted_head_importance[:num_heads].sum() + sorted_neuron_importance[:num_neurons].sum()
         if total_importance > max_importance:
