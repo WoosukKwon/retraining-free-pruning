@@ -62,3 +62,7 @@ You can also control more arguments such as sample dataset size (see `main.py`).
       primaryClass={cs.CL}
 }
 ```
+
+## Copyright
+
+THIS SOFTWARE AND/OR DATA WAS DEPOSITED IN THE BAIR OPEN RESEARCH COMMONS REPOSITORY ON 02/07/23.
